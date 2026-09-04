@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>URL Slideshow</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ============================================================ -->
+    <!-- MODO EDITOR                                                  -->
+    <!-- ============================================================ -->
+    <div id="editor" class="editor-container">
+        <header>
+            <h1>🎬 URL Slideshow</h1>
+            <p>Crea presentaciones con imágenes, GIFs y videos desde URLs</p>
+        </header>
+
+        <div class="editor-main">
+            <!-- Configuración general -->
+            <section class="config-section">
+                <h2>Configuración</h2>
+                <div class="form-row">
+                    <label for="presentation-name">Nombre de la presentación</label>
+                    <input type="text" id="presentation-name" placeholder="Mi presentación" value="Mi presentación">
+                </div>
+                <div class="form-row">
+                    <label for="slide-duration">Duración (segundos) para imágenes/GIFs</label>
+                    <input type="number" id="slide-duration" value="5" min="1" step="0.5">
+                </div>
+                <div class="form-row">
+                    <label for="fit-mode">Modo de ajuste</label>
+                    <select id="fit-mode">
+                        <option value="contain-blur" selected>Ajustar + fondo desenfocado</option>
+                        <option value="contain">Ajustar (fondo negro)</option>
+                        <option value="cover">Rellenar (recorte)</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label for="transition-mode">Transición</label>
+                    <select id="transition-mode">
+                        <option value="fade" selected>Fade</option>
+                        <option value="none">Sin transición</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label for="loop-mode">Reproducción en bucle</label>
+                    <input type="checkbox" id="loop-mode" checked>
+                </div>
+            </section>
+
+            <!-- Lista de medios -->
+            <section class="media-section">
+                <h2>Medios</h2>
+                <div class="add-media">
+                    <input type="text" id="media-url" placeholder="https://ejemplo.com/imagen.jpg" spellcheck="false">
+                    <button id="add-media-btn">➕ Agregar medio</button>
+                </div>
+                <div id="media-list" class="media-list">
+                    <p class="empty-message">No hay medios. Agrega una URL.</p>
+                </div>
+            </section>
+
+            <!-- Acciones -->
+            <section class="actions">
+                <button id="save-btn" class="primary">💾 Guardar presentación</button>
+                <button id="preview-btn">👁️ Vista previa</button>
+                <button id="copy-btn">📋 Copiar URL</button>
+            </section>
+
+            <!-- Presentaciones guardadas localmente -->
+            <section class="local-saves">
+                <h2>Mis presentaciones</h2>
+                <div id="local-saves-list">
+                    <p class="empty-message">No hay presentaciones guardadas localmente.</p>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- MODO REPRODUCTOR                                             -->
+    <!-- ============================================================ -->
+    <div id="player" class="player-container" style="display:none;">
+        <!-- Capas para transición fade -->
+        <div id="slide-layer-a" class="slide-layer"></div>
+        <div id="slide-layer-b" class="slide-layer"></div>
+
+        <!-- Controles -->
+        <div id="player-controls" class="player-controls">
+            <button id="prev-btn" title="Anterior (←)">⏮</button>
+            <button id="play-pause-btn" title="Reproducir/Pausa (Espacio)">⏸</button>
+            <button id="next-btn" title="Siguiente (→)">⏭</button>
+            <button id="fullscreen-btn" title="Pantalla completa (F)">⛶</button>
+            <button id="exit-btn" title="Salir">✕</button>
+            <span id="slide-counter" class="slide-counter">1 / 1</span>
+        </div>
+
+        <!-- Mensaje de error o estado -->
+        <div id="player-message" class="player-message"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

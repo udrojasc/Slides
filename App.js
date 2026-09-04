@@ -1,0 +1,755 @@
+/* ============================================================
+   app.js - URL Slideshow
+   Toda la lógica: editor, reproductor, codificación, local storage
+   ============================================================ */
+
+// --- Estado global ---
+let editorState = {
+    items: [],          // { url, type }
+    name: 'Mi presentación',
+    duration: 5,
+    fit: 'contain-blur',
+    transition: 'fade',
+    loop: true
+};
+
+let playerState = {
+    config: null,       // objeto de configuración decodificado
+    currentIndex: 0,
+    isPlaying: false,
+    timer: null,
+    isTransitioning: false,
+    layers: ['a', 'b'], // ['a','b'] o ['b','a'] según el activo
+    activeLayer: 'a',   // capa actualmente visible
+    hiddenLayer: 'b'
+};
+
+// --- DOM references ---
+const $ = id => document.getElementById(id);
+const editor = $('editor');
+const player = $('player');
+const layerA = $('slide-layer-a');
+const layerB = $('slide-layer-b');
+const controls = $('player-controls');
+const playPauseBtn = $('play-pause-btn');
+const prevBtn = $('prev-btn');
+const nextBtn = $('next-btn');
+const fullscreenBtn = $('fullscreen-btn');
+const exitBtn = $('exit-btn');
+const slideCounter = $('slide-counter');
+const playerMessage = $('player-message');
+
+// --- Utilidades ---
+function detectType(url) {
+    const ext = url.split('?')[0].split('.').pop()?.toLowerCase() || '';
+    const imageExts = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif'];
+    const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'm4v'];
+    if (imageExts.includes(ext)) return 'image';
+    if (videoExts.includes(ext)) return 'video';
+    // fallback por contenido (no perfecto, pero útil)
+    if (url.includes('.gif')) return 'image';
+    return 'image'; // por defecto
+}
+
+// --- Codificación / Decodificación URL-safe Base64 ---
+function encodeConfig(config) {
+    const json = JSON.stringify(config);
+    // Base64 URL-safe (sin padding)
+    return btoa(unescape(encodeURIComponent(json)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+}
+
+function decodeConfig(encoded) {
+    try {
+        // Reemplazar caracteres URL-safe
+        let base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+        // Añadir padding si falta
+        while (base64.length % 4) base64 += '=';
+        const json = decodeURIComponent(escape(atob(base64)));
+        return JSON.parse(json);
+    } catch (e) {
+        return null;
+    }
+}
+
+// --- Editor: agregar medio ---
+function addMediaItem(url) {
+    url = url.trim();
+    if (!url) return false;
+    const type = detectType(url);
+    editorState.items.push({ url, type });
+    renderMediaList();
+    return true;
+}
+
+function removeMediaItem(index) {
+    editorState.items.splice(index, 1);
+    renderMediaList();
+}
+
+function moveMediaItem(index, direction) {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= editorState.items.length) return;
+    const [item] = editorState.items.splice(index, 1);
+    editorState.items.splice(newIndex, 0, item);
+    renderMediaList();
+}
+
+function renderMediaList() {
+    const list = $('media-list');
+    if (editorState.items.length === 0) {
+        list.innerHTML = '<p class="empty-message">No hay medios. Agrega una URL.</p>';
+        return;
+    }
+    list.innerHTML = '';
+    editorState.items.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = 'media-item';
+        // Thumbnail
+        const thumb = document.createElement('div');
+        thumb.className = 'thumb';
+        if (item.type === 'image') {
+            const img = document.createElement('img');
+            img.src = item.url;
+            img.alt = 'thumb';
+            img.onerror = () => { img.style.display = 'none'; };
+            thumb.appendChild(img);
+        } else {
+            thumb.textContent = '🎬';
+        }
+        // Info
+        const info = document.createElement('div');
+        info.className = 'info';
+        info.innerHTML = `
+            <div class="url">${item.url}</div>
+            <span class="type">${item.type}</span>
+        `;
+        // Acciones
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        actions.innerHTML = `
+            <button title="Subir" data-action="up">↑</button>
+            <button title="Bajar" data-action="down">↓</button>
+            <button class="danger" title="Eliminar" data-action="remove">✕</button>
+        `;
+        actions.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const action = btn.dataset.action;
+                if (action === 'remove') removeMediaItem(idx);
+                else if (action === 'up') moveMediaItem(idx, -1);
+                else if (action === 'down') moveMediaItem(idx, 1);
+            });
+        });
+        div.appendChild(thumb);
+        div.appendChild(info);
+        div.appendChild(actions);
+        list.appendChild(div);
+    });
+}
+
+// --- Editor: guardar configuración actual ---
+function getCurrentConfig() {
+    const name = $('presentation-name').value.trim() || 'Sin nombre';
+    const duration = parseFloat($('slide-duration').value) || 5;
+    const fit = $('fit-mode').value;
+    const transition = $('transition-mode').value;
+    const loop = $('loop-mode').checked;
+    return {
+        name,
+        duration,
+        fit,
+        transition,
+        loop,
+        items: editorState.items.slice() // copia
+    };
+}
+
+function loadConfigToEditor(config) {
+    if (!config) return;
+    $('presentation-name').value = config.name || 'Mi presentación';
+    $('slide-duration').value = config.duration || 5;
+    $('fit-mode').value = config.fit || 'contain-blur';
+    $('transition-mode').value = config.transition || 'fade';
+    $('loop-mode').checked = config.loop !== undefined ? config.loop : true;
+    editorState.items = (config.items || []).slice();
+    renderMediaList();
+}
+
+// --- Guardar en localStorage ---
+function saveToLocalStorage() {
+    const config = getCurrentConfig();
+    if (config.items.length === 0) {
+        alert('Agrega al menos un medio antes de guardar.');
+        return null;
+    }
+    const saves = JSON.parse(localStorage.getItem('urlSlideshow_saves') || '[]');
+    const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
+    const entry = {
+        id,
+        name: config.name,
+        date: new Date().toISOString(),
+        count: config.items.length,
+        config: config
+    };
+    saves.unshift(entry);
+    localStorage.setItem('urlSlideshow_saves', JSON.stringify(saves));
+    renderLocalSaves();
+    return config;
+}
+
+function renderLocalSaves() {
+    const container = $('local-saves-list');
+    const saves = JSON.parse(localStorage.getItem('urlSlideshow_saves') || '[]');
+    if (saves.length === 0) {
+        container.innerHTML = '<p class="empty-message">No hay presentaciones guardadas localmente.</p>';
+        return;
+    }
+    container.innerHTML = '';
+    saves.forEach(entry => {
+        const div = document.createElement('div');
+        div.className = 'save-item';
+        div.innerHTML = `
+            <span class="name">${entry.name}</span>
+            <span class="meta">${entry.count} elementos · ${new Date(entry.date).toLocaleDateString()}</span>
+            <div class="actions">
+                <button class="primary" data-action="play">▶ Reproducir</button>
+                <button data-action="edit">✏️ Editar</button>
+                <button data-action="copy">📋 Copiar URL</button>
+                <button class="danger" data-action="delete">🗑 Eliminar</button>
+            </div>
+        `;
+        div.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const action = btn.dataset.action;
+                if (action === 'play') {
+                    // Reproducir directamente desde el guardado
+                    const config = entry.config;
+                    if (config && config.items.length) {
+                        startPlayer(config);
+                    } else {
+                        alert('Configuración inválida.');
+                    }
+                } else if (action === 'edit') {
+                    loadConfigToEditor(entry.config);
+                } else if (action === 'copy') {
+                    copyUrlFromConfig(entry.config);
+                } else if (action === 'delete') {
+                    if (confirm(`¿Eliminar "${entry.name}"?`)) {
+                        const saves2 = JSON.parse(localStorage.getItem('urlSlideshow_saves') || '[]');
+                        const filtered = saves2.filter(s => s.id !== entry.id);
+                        localStorage.setItem('urlSlideshow_saves', JSON.stringify(filtered));
+                        renderLocalSaves();
+                    }
+                }
+            });
+        });
+        container.appendChild(div);
+    });
+}
+
+// --- Copiar URL ---
+function copyUrlFromConfig(config) {
+    if (!config || config.items.length === 0) {
+        alert('No hay medios para generar una URL.');
+        return;
+    }
+    const encoded = encodeConfig(config);
+    const url = window.location.href.split('#')[0] + '#play=' + encoded;
+    navigator.clipboard.writeText(url).then(() => {
+        alert('✅ URL copiada al portapapeles:\n' + url);
+    }).catch(() => {
+        // fallback
+        prompt('Copia esta URL:', url);
+    });
+}
+
+function copyCurrentUrl() {
+    const config = getCurrentConfig();
+    if (config.items.length === 0) {
+        alert('Agrega al menos un medio.');
+        return;
+    }
+    copyUrlFromConfig(config);
+}
+
+// --- Vista previa ---
+function previewCurrent() {
+    const config = getCurrentConfig();
+    if (config.items.length === 0) {
+        alert('Agrega al menos un medio.');
+        return;
+    }
+    startPlayer(config);
+}
+
+// --- Iniciar reproductor ---
+function startPlayer(config) {
+    if (!config || !config.items || config.items.length === 0) {
+        showPlayerMessage('No hay elementos para reproducir.');
+        return;
+    }
+    // Detener cualquier reproducción anterior
+    stopPlayer();
+    playerState.config = config;
+    playerState.currentIndex = 0;
+    playerState.isPlaying = true;
+    playerState.isTransitioning = false;
+    playerState.activeLayer = 'a';
+    playerState.hiddenLayer = 'b';
+    // Limpiar capas
+    layerA.innerHTML = '';
+    layerB.innerHTML = '';
+    layerA.className = 'slide-layer';
+    layerB.className = 'slide-layer';
+    // Mostrar reproductor, ocultar editor
+    editor.style.display = 'none';
+    player.style.display = 'block';
+    controls.classList.remove('visible');
+    playPauseBtn.textContent = '⏸';
+    // Cargar primera diapositiva
+    loadSlide(0, layerA, true); // activa inmediatamente
+    // Si es video, la transición la maneja el evento ended
+    // Si es imagen, iniciar timer
+    scheduleNext();
+    // Mostrar controles temporalmente
+    showControlsTemporarily();
+    // Actualizar contador
+    updateCounter();
+}
+
+function stopPlayer() {
+    if (playerState.timer) {
+        clearTimeout(playerState.timer);
+        playerState.timer = null;
+    }
+    // Pausar videos
+    document.querySelectorAll('.slide-layer video').forEach(v => v.pause());
+    playerState.isPlaying = false;
+    // No ocultamos el player aquí, solo detenemos la reproducción
+}
+
+function loadSlide(index, layerElement, makeActive) {
+    const config = playerState.config;
+    if (!config || index < 0 || index >= config.items.length) return;
+    const item = config.items[index];
+    const fit = config.fit || 'contain-blur';
+    const container = document.createElement('div');
+    container.className = 'slide-content';
+    
+    // Fondo blur (solo para contain-blur)
+    if (fit === 'contain-blur') {
+        const bg = document.createElement('img');
+        bg.className = 'bg-blur';
+        bg.src = item.url;
+        bg.alt = 'background blur';
+        bg.onerror = () => { bg.style.display = 'none'; };
+        container.appendChild(bg);
+    }
+    
+    // Elemento principal
+    let main;
+    const mainClass = fit === 'cover' ? 'cover' : 'contain';
+    if (item.type === 'video') {
+        main = document.createElement('video');
+        main.src = item.url;
+        main.className = `main-media ${mainClass}`;
+        main.muted = true;
+        main.playsInline = true;
+        main.autoplay = false; // lo controlamos nosotros
+        main.preload = 'metadata';
+        // Manejar error
+        main.onerror = () => {
+            showSlideError(container, 'No se pudo cargar el video');
+        };
+        // Evento ended para avanzar
+        main.addEventListener('ended', () => {
+            // Avanzar al siguiente si está reproduciendo
+            if (playerState.isPlaying) {
+                goToNext();
+            }
+        });
+        // Para autoplay, lo iniciamos al hacerla activa
+        container.appendChild(main);
+    } else {
+        // Imagen (incluye GIF)
+        main = document.createElement('img');
+        main.className = `main-media ${mainClass}`;
+        main.src = item.url;
+        main.alt = 'slide';
+        main.onerror = () => {
+            showSlideError(container, 'No se pudo cargar la imagen');
+        };
+        container.appendChild(main);
+    }
+    
+    // Limpiar y agregar al layer
+    layerElement.innerHTML = '';
+    layerElement.appendChild(container);
+    
+    if (makeActive) {
+        layerElement.classList.add('active');
+        // Si es video, reproducir
+        if (item.type === 'video') {
+            const video = layerElement.querySelector('video');
+            if (video) {
+                video.play().catch(() => {});
+            }
+        }
+    } else {
+        layerElement.classList.remove('active');
+    }
+}
+
+function showSlideError(container, msg) {
+    const div = document.createElement('div');
+    div.className = 'error-msg';
+    div.textContent = msg;
+    container.appendChild(div);
+}
+
+function updateCounter() {
+    const total = playerState.config?.items.length || 0;
+    const current = playerState.currentIndex + 1;
+    slideCounter.textContent = `${current} / ${total}`;
+}
+
+// --- Transición y navegación ---
+function goToNext() {
+    if (playerState.isTransitioning) return;
+    const config = playerState.config;
+    if (!config) return;
+    let nextIndex = playerState.currentIndex + 1;
+    if (nextIndex >= config.items.length) {
+        if (config.loop) {
+            nextIndex = 0;
+        } else {
+            // Fin de la presentación
+            pausePlayer();
+            showPlayerMessage('Fin de la presentación');
+            return;
+        }
+    }
+    performTransition(nextIndex);
+}
+
+function goToPrev() {
+    if (playerState.isTransitioning) return;
+    const config = playerState.config;
+    if (!config) return;
+    let prevIndex = playerState.currentIndex - 1;
+    if (prevIndex < 0) {
+        if (config.loop) {
+            prevIndex = config.items.length - 1;
+        } else {
+            return;
+        }
+    }
+    performTransition(prevIndex);
+}
+
+function performTransition(newIndex) {
+    const config = playerState.config;
+    if (!config) return;
+    playerState.isTransitioning = true;
+    // Determinar capas
+    const activeLayer = playerState.activeLayer;
+    const hiddenLayer = (activeLayer === 'a') ? 'b' : 'a';
+    const activeEl = (activeLayer === 'a') ? layerA : layerB;
+    const hiddenEl = (hiddenLayer === 'a') ? layerA : layerB;
+    
+    // Cargar nuevo slide en capa oculta (sin activar)
+    loadSlide(newIndex, hiddenEl, false);
+    
+    // Si es video en la nueva capa, iniciar reproducción
+    const video = hiddenEl.querySelector('video');
+    if (video) {
+        video.play().catch(() => {});
+    }
+    
+    const transitionMode = config.transition || 'fade';
+    if (transitionMode === 'none') {
+        // Cambio instantáneo
+        activeEl.classList.remove('active');
+        hiddenEl.classList.add('active');
+        playerState.activeLayer = hiddenLayer;
+        playerState.currentIndex = newIndex;
+        updateCounter();
+        playerState.isTransitioning = false;
+        scheduleNext();
+        return;
+    }
+    
+    // Fade: activar capa oculta, desactivar activa
+    hiddenEl.classList.add('active');
+    // Pequeño delay para asegurar que el render ocurra
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            activeEl.classList.remove('active');
+            // Actualizar estado después de la transición
+            setTimeout(() => {
+                playerState.activeLayer = hiddenLayer;
+                playerState.currentIndex = newIndex;
+                updateCounter();
+                playerState.isTransitioning = false;
+                scheduleNext();
+                // Si el video en la capa antigua estaba reproduciéndose, pausarlo
+                const oldVideo = activeEl.querySelector('video');
+                if (oldVideo) oldVideo.pause();
+            }, 400); // duración de la transición CSS (0.8s, pero 400ms es suficiente para el cambio visual)
+        });
+    });
+}
+
+function scheduleNext() {
+    // Limpiar timer anterior
+    if (playerState.timer) {
+        clearTimeout(playerState.timer);
+        playerState.timer = null;
+    }
+    if (!playerState.isPlaying) return;
+    const config = playerState.config;
+    if (!config) return;
+    const item = config.items[playerState.currentIndex];
+    if (!item) return;
+    
+    // Si es video, no usamos timer, el evento ended lo maneja
+    if (item.type === 'video') {
+        // Verificar si el video ya terminó (por si acaso)
+        const activeLayer = (playerState.activeLayer === 'a') ? layerA : layerB;
+        const video = activeLayer.querySelector('video');
+        if (video && video.ended) {
+            // Si ya terminó, avanzar
+            goToNext();
+        }
+        return;
+    }
+    
+    // Imagen/GIF: programar siguiente
+    const duration = (config.duration || 5) * 1000;
+    playerState.timer = setTimeout(() => {
+        if (playerState.isPlaying) {
+            goToNext();
+        }
+    }, duration);
+}
+
+// --- Controles de reproducción ---
+function togglePlayPause() {
+    if (!playerState.config) return;
+    if (playerState.isPlaying) {
+        pausePlayer();
+    } else {
+        resumePlayer();
+    }
+}
+
+function pausePlayer() {
+    if (!playerState.isPlaying) return;
+    playerState.isPlaying = false;
+    if (playerState.timer) {
+        clearTimeout(playerState.timer);
+        playerState.timer = null;
+    }
+    // Pausar videos
+    const activeLayer = (playerState.activeLayer === 'a') ? layerA : layerB;
+    const video = activeLayer.querySelector('video');
+    if (video) video.pause();
+    playPauseBtn.textContent = '▶';
+    showPlayerMessage('⏸ Pausado');
+    setTimeout(() => hidePlayerMessage(), 1500);
+}
+
+function resumePlayer() {
+    if (playerState.isPlaying) return;
+    const config = playerState.config;
+    if (!config) return;
+    playerState.isPlaying = true;
+    // Reanudar video si existe
+    const activeLayer = (playerState.activeLayer === 'a') ? layerA : layerB;
+    const video = activeLayer.querySelector('video');
+    if (video) {
+        video.play().catch(() => {});
+        // Si el video ya terminó, avanzar
+        if (video.ended) {
+            goToNext();
+            return;
+        }
+    }
+    playPauseBtn.textContent = '⏸';
+    scheduleNext();
+    hidePlayerMessage();
+}
+
+// --- Controles de UI ---
+function showControlsTemporarily() {
+    controls.classList.add('visible');
+    clearTimeout(window.controlsTimeout);
+    window.controlsTimeout = setTimeout(() => {
+        controls.classList.remove('visible');
+    }, 3000);
+}
+
+function showPlayerMessage(msg) {
+    playerMessage.textContent = msg;
+    playerMessage.classList.add('show');
+    clearTimeout(window.msgTimeout);
+    window.msgTimeout = setTimeout(() => {
+        playerMessage.classList.remove('show');
+    }, 3000);
+}
+
+function hidePlayerMessage() {
+    playerMessage.classList.remove('show');
+    clearTimeout(window.msgTimeout);
+}
+
+// --- Fullscreen ---
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.() || 
+        document.documentElement.webkitRequestFullscreen?.();
+    } else {
+        document.exitFullscreen?.() || 
+        document.webkitExitFullscreen?.();
+    }
+}
+
+// --- Salir del reproductor ---
+function exitPlayer() {
+    stopPlayer();
+    if (document.fullscreenElement) {
+        document.exitFullscreen?.() || document.webkitExitFullscreen?.();
+    }
+    player.style.display = 'none';
+    editor.style.display = 'flex';
+    // Restablecer capas
+    layerA.innerHTML = '';
+    layerB.innerHTML = '';
+    layerA.className = 'slide-layer';
+    layerB.className = 'slide-layer';
+    playerState.config = null;
+    // Refrescar lista local
+    renderLocalSaves();
+}
+
+// --- Inicialización: leer hash ---
+function initFromHash() {
+    const hash = window.location.hash;
+    if (hash.startsWith('#play=')) {
+        const encoded = hash.substring(6);
+        const config = decodeConfig(encoded);
+        if (config && config.items && config.items.length > 0) {
+            startPlayer(config);
+            return true;
+        } else {
+            // Hash inválido
+            alert('Presentación no válida. El hash está corrupto o no se puede decodificar.');
+            window.location.hash = '';
+            return false;
+        }
+    }
+    return false;
+}
+
+// --- Event listeners ---
+document.addEventListener('DOMContentLoaded', () => {
+    // Editor: agregar medio
+    $('add-media-btn').addEventListener('click', () => {
+        const url = $('media-url').value;
+        if (addMediaItem(url)) {
+            $('media-url').value = '';
+            $('media-url').focus();
+        } else {
+            alert('Ingresa una URL válida.');
+        }
+    });
+    $('media-url').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            $('add-media-btn').click();
+        }
+    });
+    
+    // Editor: guardar
+    $('save-btn').addEventListener('click', () => {
+        const config = saveToLocalStorage();
+        if (config) {
+            // Generar y mostrar URL en consola (opcional)
+            const encoded = encodeConfig(config);
+            const url = window.location.href.split('#')[0] + '#play=' + encoded;
+            alert('✅ Presentación guardada localmente.\nURL generada (cópiala con el botón "Copiar URL"):\n' + url);
+        }
+    });
+    
+    // Editor: vista previa
+    $('preview-btn').addEventListener('click', previewCurrent);
+    
+    // Editor: copiar URL
+    $('copy-btn').addEventListener('click', copyCurrentUrl);
+    
+    // Reproductor: controles
+    playPauseBtn.addEventListener('click', togglePlayPause);
+    prevBtn.addEventListener('click', () => { if (playerState.config) goToPrev(); });
+    nextBtn.addEventListener('click', () => { if (playerState.config) goToNext(); });
+    fullscreenBtn.addEventListener('click', toggleFullscreen);
+    exitBtn.addEventListener('click', exitPlayer);
+    
+    // Teclado
+    document.addEventListener('keydown', (e) => {
+        if (player.style.display === 'block') {
+            if (e.key === 'ArrowLeft') { e.preventDefault(); goToPrev(); showControlsTemporarily(); }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); goToNext(); showControlsTemporarily(); }
+            else if (e.key === ' ' || e.key === 'Space') { e.preventDefault(); togglePlayPause(); showControlsTemporarily(); }
+            else if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleFullscreen(); }
+            else if (e.key === 'Escape') { 
+                if (document.fullscreenElement) {
+                    document.exitFullscreen?.() || document.webkitExitFullscreen?.();
+                } else {
+                    exitPlayer();
+                }
+            }
+        }
+    });
+    
+    // Mostrar/ocultar controles con mouse/touch en reproductor
+    player.addEventListener('mousemove', showControlsTemporarily);
+    player.addEventListener('touchstart', showControlsTemporarily);
+    player.addEventListener('click', showControlsTemporarily);
+    
+    // Cargar presentaciones locales al iniciar
+    renderLocalSaves();
+    
+    // Inicializar desde hash
+    const hasValidHash = initFromHash();
+    if (hasValidHash) {
+        // Ya estamos en reproductor
+    } else {
+        // Asegurar editor visible
+        editor.style.display = 'flex';
+        player.style.display = 'none';
+        // Cargar datos de ejemplo (opcional)
+        if (editorState.items.length === 0) {
+            // Agregar ejemplos solo si no hay hash y no hay nada
+            // (para demostración, pero no obligatorio)
+        }
+    }
+});
+
+// Cuando cambie el hash (por ejemplo, al hacer clic en un enlace)
+window.addEventListener('hashchange', () => {
+    // Si estamos en el reproductor y el hash cambia, podría ser una nueva presentación
+    if (player.style.display === 'block') {
+        // Salir y recargar
+        exitPlayer();
+    }
+    initFromHash();
+});
+
+// --- Utilidad extra: escalar el fondo blur ---
+// (Ya está en CSS con transform: scale(1.1))
+
+console.log('🎬 URL Slideshow cargado correctamente.');
+console.log('Comparte presentaciones mediante #play=... en la URL.');
