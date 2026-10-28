@@ -192,6 +192,25 @@ function decodeConfig(encoded) {
     }
 }
 
+// Reutiliza capturas locales que ya genera GitHub Actions cada 10 minutos.
+// Esto evita depender de un segundo servicio remoto para informes conocidos de Looker.
+function getKnownDashboardCapture(rawUrl) {
+    try {
+        const parsed = new URL(rawUrl);
+        const match = parsed.pathname.match(/\/(?:embed\/)?reporting\/([^/]+)/i);
+        if (!match) return null;
+        const reportId = match[1].toLowerCase();
+        const knownReports = {
+            '53a75d46-1e56-4252-b957-67d57077bde2': 'report-1.png',
+            'd48a4893-4559-4a61-945c-5e91c5d1f90f': 'report-2.png'
+        };
+        const file = knownReports[reportId];
+        return file ? new URL('captures/' + file, window.location.href.split('#')[0]).toString() : null;
+    } catch (_) {
+        return null;
+    }
+}
+
 // --- Editor: agregar medio ---
 async function addMediaItem(url) {
     url = url.trim();
@@ -205,8 +224,16 @@ async function addMediaItem(url) {
     const detectedType = detectType(canonicalUrl);
     let item;
 
-    if (detectedType === 'image' || detectedType === 'video' || detectedType === 'embed') {
-        // Medios conocidos que funcionan dentro de un iframe se conservan como tales.
+    const knownCaptureUrl = getKnownDashboardCapture(canonicalUrl);
+    if (knownCaptureUrl) {
+        // Captura propia ya generada por GitHub Actions; no hace falta una API externa.
+        item = {
+            url: knownCaptureUrl,
+            type: 'image',
+            sourceUrl: canonicalUrl,
+            capture: true
+        };
+    } else if (detectedType === 'image' || detectedType === 'video' || detectedType === 'embed') {
         item = { url: canonicalUrl, type: detectedType };
     } else {
         const button = $('add-media-btn');
