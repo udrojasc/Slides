@@ -41,14 +41,48 @@ const playerMessage = $('player-message');
 
 // --- Utilidades ---
 function detectType(url) {
-    const ext = url.split('?')[0].split('.').pop()?.toLowerCase() || '';
+    const ext = url.split('?')[0].split('#')[0].split('.').pop()?.toLowerCase() || '';
     const imageExts = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif'];
     const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'm4v'];
+    let host = '';
+    try { host = new URL(url).hostname.toLowerCase().replace(/^www\./, ''); } catch (_) {}
+    if (host === 'canva.com' || host.endsWith('.canva.com') ||
+        host === 'powerbi.com' || host.endsWith('.powerbi.com') ||
+        host === 'app.powerbi.com' ||
+        host === 'lookerstudio.google.com' || host === 'datastudio.google.com') return 'embed';
     if (imageExts.includes(ext)) return 'image';
     if (videoExts.includes(ext)) return 'video';
-    // fallback por contenido (no perfecto, pero útil)
     if (url.includes('.gif')) return 'image';
-    return 'image'; // por defecto
+    return 'image';
+}
+
+// Convierte enlaces compartidos en URLs aptas para iframe cuando el proveedor lo permite.
+// Los enlaces privados siguen necesitando que el espectador tenga permisos y sesión.
+function getEmbedUrl(rawUrl) {
+    let parsed;
+    try { parsed = new URL(rawUrl); } catch (_) { return rawUrl; }
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (host === 'canva.com' || host.endsWith('.canva.com')) {
+        parsed.searchParams.set('embed', '1');
+        return parsed.toString();
+    }
+    if (host === 'datastudio.google.com' || host === 'lookerstudio.google.com') {
+        const match = parsed.pathname.match(/^\/(?:embed\/)?reporting\/([^/]+)(\/page\/[^/?]+)?/i);
+        if (match) {
+            parsed.hostname = 'lookerstudio.google.com';
+            parsed.pathname = '/embed/reporting/' + match[1] + (match[2] || '');
+            return parsed.toString();
+        }
+        return rawUrl;
+    }
+    if (host === 'app.powerbi.com' || host.endsWith('.powerbi.com')) {
+        // Los enlaces "view" públicos y "reportEmbed" son compatibles con iframe.
+        if (parsed.pathname.startsWith('/view') || parsed.pathname.includes('/reportEmbed')) return rawUrl;
+        // Para otros enlaces de Power BI, no inventamos parámetros de autenticación:
+        // el usuario debe pegar el enlace "Insertar informe" proporcionado por Power BI.
+        return rawUrl;
+    }
+    return rawUrl;
 }
 
 // --- Configuración comprimida para enlaces cortos ---
@@ -125,6 +159,9 @@ function renderMediaList() {
             img.alt = 'thumb';
             img.onerror = () => { img.style.display = 'none'; };
             thumb.appendChild(img);
+        } else if (item.type === 'embed' || detectType(item.url) === 'embed') {
+            thumb.textContent = '📊';
+            thumb.title = 'Presentación o dashboard integrado';
         } else {
             thumb.textContent = '🎬';
         }
@@ -404,11 +441,12 @@ function loadSlide(index, layerElement, makeActive) {
     if (!config || index < 0 || index >= config.items.length) return;
     const item = config.items[index];
     const fit = config.fit || 'contain-blur';
+    const mediaType = item.type === 'embed' || detectType(item.url) === 'embed' ? 'embed' : item.type;
     const container = document.createElement('div');
     container.className = 'slide-content';
     
-    // Fondo blur (solo para contain-blur)
-    if (fit === 'contain-blur') {
+    // Fondo blur solo para imágenes; los dashboards usan todo el lienzo.
+    if (fit === 'contain-blur' && mediaType === 'image') {
         const bg = document.createElement('img');
         bg.className = 'bg-blur';
         bg.src = item.url;
@@ -420,29 +458,35 @@ function loadSlide(index, layerElement, makeActive) {
     // Elemento principal
     let main;
     const mainClass = fit === 'cover' ? 'cover' : 'contain';
-    if (item.type === 'video') {
+    if (mediaType === 'embed') {
+        main = document.createElement('iframe');
+        main.className = 'main-media embedded-media';
+        main.src = getEmbedUrl(item.url);
+        main.title = 'Presentación o dashboard integrado';
+        main.loading = 'eager';
+        main.referrerPolicy = 'strict-origin-when-cross-origin';
+        main.allow = 'fullscreen; autoplay; clipboard-read; clipboard-write';
+        main.allowFullscreen = true;
+        main.style.border = '0';
+        main.style.background = '#fff';
+        main.onerror = () => showSlideError(container, 'No se pudo cargar el contenido integrado. Comprueba el enlace y sus permisos.');
+        container.appendChild(main);
+    } else if (mediaType === 'video') {
         main = document.createElement('video');
         main.src = item.url;
         main.className = `main-media ${mainClass}`;
         main.muted = true;
         main.playsInline = true;
-        main.autoplay = false; // lo controlamos nosotros
+        main.autoplay = false;
         main.preload = 'metadata';
-        // Manejar error
         main.onerror = () => {
             showSlideError(container, 'No se pudo cargar el video');
         };
-        // Evento ended para avanzar
         main.addEventListener('ended', () => {
-            // Avanzar al siguiente si está reproduciendo
-            if (playerState.isPlaying) {
-                goToNext();
-            }
+            if (playerState.isPlaying) goToNext();
         });
-        // Para autoplay, lo iniciamos al hacerla activa
         container.appendChild(main);
     } else {
-        // Imagen (incluye GIF)
         main = document.createElement('img');
         main.className = `main-media ${mainClass}`;
         main.src = item.url;
