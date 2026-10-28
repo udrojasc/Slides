@@ -41,19 +41,19 @@ const playerMessage = $('player-message');
 
 // --- Utilidades ---
 function detectType(url) {
-    const ext = url.split('?')[0].split('#')[0].split('.').pop()?.toLowerCase() || '';
-    const imageExts = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif'];
+    let parsed;
+    try { parsed = new URL(url); } catch (_) { return 'invalid'; }
+    if (!['http:', 'https:'].includes(parsed.protocol)) return 'invalid';
+
+    const ext = parsed.pathname.split('.').pop()?.toLowerCase() || '';
+    const imageExts = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'bmp', 'svg'];
     const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'm4v'];
-    let host = '';
-    try { host = new URL(url).hostname.toLowerCase().replace(/^www\./, ''); } catch (_) {}
-    if (host === 'canva.com' || host.endsWith('.canva.com') ||
-        host === 'powerbi.com' || host.endsWith('.powerbi.com') ||
-        host === 'app.powerbi.com' ||
-        host === 'lookerstudio.google.com' || host === 'datastudio.google.com') return 'embed';
     if (imageExts.includes(ext)) return 'image';
     if (videoExts.includes(ext)) return 'video';
-    if (url.includes('.gif')) return 'image';
-    return 'image';
+
+    // Todo enlace que no parezca un archivo de imagen o video se inspecciona
+    // al agregarlo: si no carga como imagen, se captura como página web.
+    return 'web';
 }
 
 // Convierte enlaces compartidos en URLs aptas para iframe cuando el proveedor lo permite.
@@ -97,6 +97,63 @@ function getImageUrlForDisplay(rawUrl) {
     return rawUrl;
 }
 
+// Comprueba si el enlace sirve una imagen real, incluso si no tiene extensión.
+function probeImage(url, timeoutMs = 8000) {
+    return new Promise(resolve => {
+        const img = new Image();
+        let finished = false;
+        const finish = result => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            img.onload = null;
+            img.onerror = null;
+            resolve(result);
+        };
+        const timer = setTimeout(() => finish(false), timeoutMs);
+        img.onload = () => finish(true);
+        img.onerror = () => finish(false);
+        img.src = url;
+    });
+}
+
+// Toma una captura de la página en el momento de agregarla al editor.
+// Microlink genera la imagen en un navegador remoto y devuelve una URL CDN.
+async function captureWebpage(url) {
+    const apiUrl = new URL('https://api.microlink.io/');
+    apiUrl.searchParams.set('url', url);
+    apiUrl.searchParams.set('screenshot', 'true');
+    apiUrl.searchParams.set('meta', 'false');
+    apiUrl.searchParams.set('force', 'true');
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90000);
+    try {
+        const response = await fetch(apiUrl.toString(), { signal: controller.signal });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(payload.message || `El servicio de capturas respondió HTTP ${response.status}.`);
+        }
+
+        const screenshotUrl = payload?.data?.screenshot?.url;
+        if (payload?.status !== 'success' || !screenshotUrl) {
+            throw new Error(
+                payload?.message ||
+                payload?.error?.message ||
+                'El servicio no pudo generar la captura. La página puede ser privada, bloquear capturas automáticas o haber agotado la cuota gratuita.'
+            );
+        }
+        return screenshotUrl;
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw new Error('La captura tardó más de 90 segundos.');
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
 // --- Configuración comprimida para enlaces cortos ---
 // Los enlaces antiguos en Base64 siguen siendo compatibles.
 function encodeConfig(config) {
@@ -130,11 +187,45 @@ function decodeConfig(encoded) {
 }
 
 // --- Editor: agregar medio ---
-function addMediaItem(url) {
+async function addMediaItem(url) {
     url = url.trim();
     if (!url) return false;
-    const type = detectType(url);
-    editorState.items.push({ url, type });
+
+    let parsed;
+    try { parsed = new URL(url); } catch (_) { return false; }
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+
+    const canonicalUrl = parsed.toString();
+    const detectedType = detectType(canonicalUrl);
+    let item;
+
+    if (detectedType === 'image' || detectedType === 'video') {
+        item = { url: canonicalUrl, type: detectedType };
+    } else {
+        const button = $('add-media-btn');
+        const originalLabel = button.textContent;
+        button.disabled = true;
+        try {
+            button.textContent = 'Detectando medio...';
+            if (await probeImage(canonicalUrl)) {
+                item = { url: canonicalUrl, type: 'image' };
+            } else {
+                button.textContent = 'Capturando página...';
+                const screenshotUrl = await captureWebpage(canonicalUrl);
+                item = {
+                    url: screenshotUrl,
+                    type: 'image',
+                    sourceUrl: canonicalUrl,
+                    capture: true
+                };
+            }
+        } finally {
+            button.disabled = false;
+            button.textContent = originalLabel;
+        }
+    }
+
+    editorState.items.push(item);
     renderMediaList();
     return true;
 }
@@ -180,10 +271,13 @@ function renderMediaList() {
         // Info
         const info = document.createElement('div');
         info.className = 'info';
-        info.innerHTML = `
-            <div class="url">${item.url}</div>
-            <span class="type">${item.type}</span>
-        `;
+        const urlText = document.createElement('div');
+        urlText.className = 'url';
+        urlText.textContent = item.sourceUrl || item.url;
+        const typeLabel = document.createElement('span');
+        typeLabel.className = 'type';
+        typeLabel.textContent = item.capture ? 'Captura web' : item.type;
+        info.append(urlText, typeLabel);
         // Acciones
         const actions = document.createElement('div');
         actions.className = 'actions';
@@ -796,13 +890,23 @@ function initFromHash() {
 // --- Event listeners ---
 document.addEventListener('DOMContentLoaded', () => {
     // Editor: agregar medio
-    $('add-media-btn').addEventListener('click', () => {
-        const url = $('media-url').value;
-        if (addMediaItem(url)) {
-            $('media-url').value = '';
-            $('media-url').focus();
-        } else {
-            alert('Ingresa una URL válida.');
+    $('add-media-btn').addEventListener('click', async () => {
+        const input = $('media-url');
+        const url = input.value;
+        try {
+            const added = await addMediaItem(url);
+            if (added) {
+                input.value = '';
+                input.focus();
+            } else {
+                alert('Ingresa una URL válida que comience con http:// o https://.');
+            }
+        } catch (error) {
+            alert(
+                'No se pudo capturar esta página.\n\n' +
+                (error?.message || 'Error desconocido.') +
+                '\n\nEl servicio gratuito permite hasta 25 capturas al día. Las páginas privadas o protegidas pueden no funcionar.'
+            );
         }
     });
     $('media-url').addEventListener('keydown', (e) => {
