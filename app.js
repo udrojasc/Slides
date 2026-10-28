@@ -189,7 +189,12 @@ async function addMediaItem(url) {
                 item = { url: canonicalUrl, type: 'image' };
             } else {
                 button.textContent = 'Capturando página...';
-                const screenshotUrl = await captureWebpage(canonicalUrl);
+                const screenshotUrl = captureWebpage(canonicalUrl);
+                // Esperar a que PageShot devuelva la imagen real, no solo construir la URL.
+                const screenshotLoaded = await probeImage(screenshotUrl, 65000);
+                if (!screenshotLoaded) {
+                    throw new Error('La captura no llegó en 65 segundos. La página puede ser lenta o estar bloqueada.');
+                }
                 item = {
                     url: screenshotUrl,
                     type: 'image',
