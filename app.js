@@ -46,6 +46,7 @@ const playerMessage = $('player-message');
 const captureRefreshStatus = $('capture-refresh-status');
 const captureRefreshTimerText = $('capture-refresh-timer');
 const captureRefreshDetail = $('capture-refresh-detail');
+const captureSourceCountdown = $('capture-source-countdown');
 const editorCaptureCountdown = $('editor-capture-countdown');
 
 // --- Utilidades ---
@@ -225,10 +226,14 @@ function updateCaptureRefreshStatus() {
     if (!hasScheduledCaptures) return;
 
     const remaining = Math.max(0, (playerState.nextCaptureCheckAt || Date.now()) - Date.now());
-    captureRefreshTimerText.textContent = 'Próxima recarga: ' + formatCountdown(remaining);
+    const sourceRemaining = CAPTURE_SCHEDULE_INTERVAL_MS - (Date.now() % CAPTURE_SCHEDULE_INTERVAL_MS);
+    captureRefreshTimerText.textContent = 'Próxima comprobación: ' + formatCountdown(remaining);
+    if (captureSourceCountdown) {
+        captureSourceCountdown.textContent = 'Siguiente captura del servidor: ' + formatCountdown(sourceRemaining);
+    }
     captureRefreshDetail.textContent = playerState.lastCaptureCheckAt
-        ? 'Última comprobación ' + formatClock(playerState.lastCaptureCheckAt) + ' · fuente cada ~10 min'
-        : 'La fuente se renueva aproximadamente cada 10 min';
+        ? 'Última comprobación del navegador: ' + formatClock(playerState.lastCaptureCheckAt)
+        : 'La publicación del servidor puede tardar unos minutos';
 }
 
 function stopCaptureRefreshMonitoring() {
