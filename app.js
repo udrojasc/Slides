@@ -21,7 +21,12 @@ let playerState = {
     isTransitioning: false,
     layers: ['a', 'b'], // ['a','b'] o ['b','a'] según el activo
     activeLayer: 'a',   // capa actualmente visible
-    hiddenLayer: 'b'
+    hiddenLayer: 'b',
+    captureRefreshTimer: null,
+    captureCountdownTimer: null,
+    nextCaptureCheckAt: null,
+    lastCaptureCheckAt: null,
+    captureRefreshInProgress: false
 };
 
 // --- DOM references ---
@@ -38,6 +43,9 @@ const fullscreenBtn = $('fullscreen-btn');
 const exitBtn = $('exit-btn');
 const slideCounter = $('slide-counter');
 const playerMessage = $('player-message');
+const captureRefreshStatus = $('capture-refresh-status');
+const captureRefreshTimerText = $('capture-refresh-timer');
+const captureRefreshDetail = $('capture-refresh-detail');
 
 // --- Utilidades ---
 function detectType(url) {
@@ -158,6 +166,124 @@ function waitForCapturedImage(layerElement, timeoutMs = 65000) {
         // Evita una carrera si la imagen terminó de cargar justo al añadir eventos.
         if (image.complete) finish(image.naturalWidth > 0);
     });
+}
+
+// Las capturas locales se regeneran en GitHub Actions cada ~10 min.
+ // Slides vuelve a solicitar la imagen actual cada minuto y muestra una cuenta regresiva visible.
+const CAPTURE_RELOAD_INTERVAL_MS = 60 * 1000;
+
+function isScheduledCapture(item) {
+    if (!item || !item.url) return false;
+    try {
+        const parsed = new URL(item.url, window.location.href);
+        return parsed.origin === window.location.origin &&
+            /\/captures\/report-\d+\.png$/i.test(parsed.pathname);
+    } catch (_) {
+        return false;
+    }
+}
+
+function formatCountdown(ms) {
+    const seconds = Math.max(0, Math.ceil(ms / 1000));
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    return String(minutes).padStart(2, '0') + ':' + String(remainder).padStart(2, '0');
+}
+
+function formatClock(timestamp) {
+    if (!timestamp) return '--:--:--';
+    return new Date(timestamp).toLocaleTimeString([], {
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+}
+
+function updateCaptureRefreshStatus() {
+    if (!captureRefreshStatus || !playerState.config) return;
+    const hasScheduledCaptures = playerState.config.items.some(isScheduledCapture);
+    captureRefreshStatus.style.display = hasScheduledCaptures ? 'flex' : 'none';
+    if (!hasScheduledCaptures) return;
+
+    const remaining = Math.max(0, (playerState.nextCaptureCheckAt || Date.now()) - Date.now());
+    captureRefreshTimerText.textContent = 'Próxima recarga: ' + formatCountdown(remaining);
+    captureRefreshDetail.textContent = playerState.lastCaptureCheckAt
+        ? 'Última revisión ' + formatClock(playerState.lastCaptureCheckAt) + ' · capturas nuevas aprox. cada 10 min'
+        : 'Primera revisión en curso · capturas nuevas aprox. cada 10 min';
+}
+
+function stopCaptureRefreshMonitoring() {
+    if (playerState.captureRefreshTimer) {
+        clearInterval(playerState.captureRefreshTimer);
+        playerState.captureRefreshTimer = null;
+    }
+    if (playerState.captureCountdownTimer) {
+        clearInterval(playerState.captureCountdownTimer);
+        playerState.captureCountdownTimer = null;
+    }
+    playerState.nextCaptureCheckAt = null;
+    playerState.lastCaptureCheckAt = null;
+    playerState.captureRefreshInProgress = false;
+    if (captureRefreshStatus) captureRefreshStatus.style.display = 'none';
+}
+
+function refreshVisibleScheduledCapture() {
+    const config = playerState.config;
+    if (!config || playerState.captureRefreshInProgress) return;
+
+    playerState.captureRefreshInProgress = true;
+    playerState.nextCaptureCheckAt = Date.now() + CAPTURE_RELOAD_INTERVAL_MS;
+    updateCaptureRefreshStatus();
+
+    const item = config.items[playerState.currentIndex];
+    const activeLayer = playerState.activeLayer === 'a' ? layerA : layerB;
+    const currentImage = activeLayer.querySelector('img.main-media');
+    const finish = () => {
+        playerState.lastCaptureCheckAt = Date.now();
+        playerState.captureRefreshInProgress = false;
+        updateCaptureRefreshStatus();
+    };
+
+    if (!isScheduledCapture(item) || !currentImage) {
+        finish();
+        return;
+    }
+
+    // Pre-cargar la versión sin caché y cambiar la imagen visible solo cuando esté lista.
+    const freshUrl = getImageUrlForDisplay(item.url);
+    const preloader = new Image();
+    let finished = false;
+    const finishLoad = loaded => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
+        preloader.onload = null;
+        preloader.onerror = null;
+
+        if (loaded &&
+            playerState.config === config &&
+            config.items[playerState.currentIndex] === item &&
+            currentImage.isConnected) {
+            currentImage.src = freshUrl;
+        }
+        finish();
+    };
+    const timeout = setTimeout(() => finishLoad(false), 20000);
+    preloader.onload = () => finishLoad(preloader.naturalWidth > 0);
+    preloader.onerror = () => finishLoad(false);
+    preloader.src = freshUrl;
+}
+
+function startCaptureRefreshMonitoring() {
+    stopCaptureRefreshMonitoring();
+    const hasScheduledCaptures = playerState.config?.items?.some(isScheduledCapture);
+    if (!hasScheduledCaptures) return;
+
+    playerState.nextCaptureCheckAt = Date.now() + CAPTURE_RELOAD_INTERVAL_MS;
+    updateCaptureRefreshStatus();
+    playerState.captureCountdownTimer = setInterval(updateCaptureRefreshStatus, 1000);
+    playerState.captureRefreshTimer = setInterval(
+        refreshVisibleScheduledCapture,
+        CAPTURE_RELOAD_INTERVAL_MS
+    );
 }
 
 // --- Configuración comprimida para enlaces cortos ---
@@ -573,7 +699,8 @@ function startPlayer(config) {
     playPauseBtn.textContent = '⏸';
     // Cargar primera diapositiva. Para capturas remotas, esperar la imagen
     // antes de iniciar el temporizador; así no se reinicia mientras sigue cargando.
-    loadSlide(0, layerA, true); // activa inmediatamente
+    loadSlide(0, layerA, true);
+    startCaptureRefreshMonitoring();
     if (config.items[0]?.capture) {
         waitForCapturedImage(layerA).then(loaded => {
             if (playerState.config !== config) return;
@@ -581,7 +708,6 @@ function startPlayer(config) {
             else showPlayerMessage('No se pudo cargar la captura. Comprueba el enlace o vuelve a intentarlo.');
         });
     } else {
-        // Si es video, la transición la maneja el evento ended; los demás medios usan timer.
         scheduleNext();
     }
     // Mostrar controles temporalmente
@@ -591,6 +717,7 @@ function startPlayer(config) {
 }
 
 function stopPlayer() {
+    stopCaptureRefreshMonitoring();
     if (playerState.timer) {
         clearTimeout(playerState.timer);
         playerState.timer = null;
