@@ -39,7 +39,7 @@ try {
     try {
       for (const url of candidates) {
         try {
-          console.log(\`Opening \${report.id}: \${url}\`);
+          console.log(`Opening ${report.id}: ${url}`);
           await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
           // Looker Studio and Power BI render charts asynchronously.
           await page.waitForTimeout(report.waitMs ?? 50000);
@@ -55,23 +55,23 @@ try {
           }
 
           await page.screenshot({
-            path: \`captures/\${report.id}.png\`,
+            path: `captures/${report.id}.png`,
             type: 'png',
             fullPage: false,
             animations: 'disabled',
           });
-          console.log(\`Saved captures/\${report.id}.png\`);
+          console.log(`Saved captures/${report.id}.png`);
           captured = true;
           break;
         } catch (error) {
           lastError = error;
-          console.warn(\`Attempt failed for \${report.id} at \${url}:\`, error.message);
+          console.warn(`Attempt failed for ${report.id} at ${url}:`, error.message);
         }
       }
 
       if (!captured) {
         // Keep the last known image rather than overwriting it with a login/error screen.
-        console.error(\`WARNING: keeping existing captures/\${report.id}.png; all URL variants failed.\`, lastError);
+        console.error(`WARNING: keeping existing captures/${report.id}.png; all URL variants failed.`, lastError);
       }
     } finally {
       await page.close();
