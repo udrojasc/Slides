@@ -883,7 +883,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(
                 'No se pudo capturar esta página.\n\n' +
                 (error?.message || 'Error desconocido.') +
-                '\n\nEl servicio gratuito permite hasta 25 capturas al día. Las páginas privadas o protegidas pueden no funcionar.'
+                '\n\nPageShot no publica cupo diario o mensual, pero limita a 30 solicitudes por minuto por IP. Las páginas privadas o protegidas pueden no funcionar.'
             );
         }
     });
