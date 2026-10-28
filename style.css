@@ -361,6 +361,57 @@ section h2 {
     color: #ff6b6b;
 }
 
+/* Indicador persistente de actualización de capturas */
+.capture-refresh-status {
+    position: absolute;
+    top: 16px;
+    right: 18px;
+    z-index: 2500;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    max-width: min(390px, calc(100vw - 28px));
+    padding: 11px 14px;
+    border: 1px solid rgba(255,255,255,.18);
+    border-radius: 12px;
+    background: rgba(8, 12, 20, .82);
+    color: #f4f7fb;
+    box-shadow: 0 6px 24px rgba(0,0,0,.25);
+    backdrop-filter: blur(10px);
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+}
+.capture-refresh-dot {
+    width: 9px;
+    height: 9px;
+    flex: 0 0 9px;
+    margin-top: 5px;
+    border-radius: 50%;
+    background: #58d6a0;
+    box-shadow: 0 0 0 4px rgba(88,214,160,.13);
+}
+.capture-refresh-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.capture-refresh-copy strong {
+    font-size: 12px;
+    line-height: 1.35;
+    letter-spacing: .02em;
+}
+.capture-refresh-copy span {
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+.capture-refresh-copy small {
+    color: rgba(238,243,250,.72);
+    font-size: 10px;
+    line-height: 1.35;
+}
+
 /* ============================================================
    REPRODUCTOR
    ============================================================ */
@@ -544,6 +595,15 @@ section h2 {
 
 /* Responsive */
 @media (max-width: 640px) {
+    .capture-refresh-status {
+        top: 10px;
+        right: 10px;
+        max-width: calc(100vw - 20px);
+        padding: 9px 11px;
+    }
+    .capture-refresh-copy strong { font-size: 11px; }
+    .capture-refresh-copy span { font-size: 12px; }
+    .capture-refresh-copy small { font-size: 9px; }
     .editor-container {
         padding: 12px;
     }
