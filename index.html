@@ -11,9 +11,27 @@
     <!-- MODO EDITOR                                                  -->
     <!-- ============================================================ -->
     <div id="editor" class="editor-container">
-        <header>
-            <h1>🎬 URL Slideshow</h1>
-            <p>Crea presentaciones con imágenes, GIFs, videos, Canva, Power BI y Looker Studio</p>
+        <header class="app-header">
+            <div class="app-heading">
+                <div class="app-logo" aria-hidden="true">S</div>
+                <div>
+                    <div class="app-eyebrow">PRESENTACIONES WEB</div>
+                    <h1>URL Slideshow</h1>
+                    <p>Convierte imágenes, vídeos y páginas web en presentaciones listas para pantalla completa.</p>
+                </div>
+            </div>
+            <div class="editor-capture-card" aria-live="polite">
+                <div class="capture-card-icon" aria-hidden="true">↻</div>
+                <div class="capture-card-copy">
+                    <strong>Actualización automática de capturas</strong>
+                    <span>GitHub Actions ejecuta la captura aproximadamente cada 10 minutos.</span>
+                    <small>La publicación puede tardar unos minutos después de cada ejecución.</small>
+                </div>
+                <div class="capture-card-count">
+                    <small>Próximo inicio aprox.</small>
+                    <strong id="editor-capture-countdown">10:00</strong>
+                </div>
+            </div>
         </header>
 
         <div class="editor-main">
@@ -89,7 +107,10 @@
                     <input type="text" id="media-url" placeholder="Pega URL de imagen, video o página web" spellcheck="false">
                     <button id="add-media-btn">➕ Agregar medio</button>
                 </div>
-                <p class="media-help">Los enlaces de informes compatibles usan capturas locales que se regeneran aproximadamente cada 10 minutos. Durante la reproducción, Slides vuelve a cargar la captura visible cada minuto y muestra una cuenta regresiva. Algunas páginas protegidas pueden exigir permisos.</p>
+                <div class="capture-help">
+                    <span class="capture-help-dot" aria-hidden="true"></span>
+                    <p>Los informes configurados usan capturas programadas cada 10 minutos; durante la reproducción, Slides revisa la imagen visible cada minuto. Para páginas web genéricas se prueban varios servicios de captura.</p>
+                </div>
                 <div id="media-list" class="media-list">
                     <p class="empty-message">No hay medios. Agrega una URL.</p>
                 </div>
