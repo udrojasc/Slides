@@ -197,14 +197,26 @@ function decodeConfig(encoded) {
 function getKnownDashboardCapture(rawUrl) {
     try {
         const parsed = new URL(rawUrl);
+        const host = parsed.hostname.toLowerCase();
+        const knownPowerBI = {
+            // Public Power BI report URL supplied by the user (the r token identifies it).
+            'eyJrIjoiY2RmNWJiMGMtYjRkYi00MWI3LWI1OTYtMWFjZDdhNzQzZGFkIiwidCI6IjdlYWIxY2VkLWNkZTUtNDZjYS04NDQwLWRkM2M1ZTU3ZjdhZiIsImMiOjR9': 'report-3.png'
+        };
+        if (host === 'app.powerbi.com' && parsed.pathname.toLowerCase() === '/view') {
+            const powerBiFile = knownPowerBI[parsed.searchParams.get('r') || ''];
+            if (powerBiFile) {
+                return new URL('captures/' + powerBiFile, window.location.href.split('#')[0]).toString();
+            }
+        }
+
         const match = parsed.pathname.match(/\/(?:embed\/)?reporting\/([^/]+)/i);
         if (!match) return null;
         const reportId = match[1].toLowerCase();
-        const knownReports = {
+        const knownLooker = {
             '53a75d46-1e56-4252-b957-67d57077bde2': 'report-1.png',
             'd48a4893-4559-4a61-945c-5e91c5d1f90f': 'report-2.png'
         };
-        const file = knownReports[reportId];
+        const file = knownLooker[reportId];
         return file ? new URL('captures/' + file, window.location.href.split('#')[0]).toString() : null;
     } catch (_) {
         return null;
