@@ -89,7 +89,7 @@
                     <input type="text" id="media-url" placeholder="Pega URL de imagen, video o página web" spellcheck="false">
                     <button id="add-media-btn">➕ Agregar medio</button>
                 </div>
-                <p class="media-help">Las páginas web se muestran como capturas de PageShot al cargar el medio. No exige cuenta ni publica cupo diario o mensual, pero limita a 30 solicitudes por minuto por IP. El servicio no almacena las imágenes, así que puede generar otra captura al abrir la presentación. Las páginas privadas o protegidas pueden fallar.</p>
+                <p class="media-help">Los enlaces de informes compatibles usan capturas locales que se regeneran aproximadamente cada 10 minutos. Durante la reproducción, Slides vuelve a cargar la captura visible cada minuto y muestra una cuenta regresiva. Algunas páginas protegidas pueden exigir permisos.</p>
                 <div id="media-list" class="media-list">
                     <p class="empty-message">No hay medios. Agrega una URL.</p>
                 </div>
@@ -119,6 +119,16 @@
         <!-- Capas para transición fade -->
         <div id="slide-layer-a" class="slide-layer"></div>
         <div id="slide-layer-b" class="slide-layer"></div>
+
+        <!-- Estado persistente de actualización de capturas -->
+        <div id="capture-refresh-status" class="capture-refresh-status" style="display:none;" aria-live="polite">
+            <span class="capture-refresh-dot" aria-hidden="true"></span>
+            <div class="capture-refresh-copy">
+                <strong>Capturas automáticas</strong>
+                <span id="capture-refresh-timer">Próxima recarga: 01:00</span>
+                <small id="capture-refresh-detail">Capturas nuevas aprox. cada 10 min</small>
+            </div>
+        </div>
 
         <!-- Controles -->
         <div id="player-controls" class="player-controls">
