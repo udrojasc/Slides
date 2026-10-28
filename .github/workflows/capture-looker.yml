@@ -36,14 +36,14 @@ jobs:
           npm install --no-save playwright
           npx playwright install --with-deps chromium
 
-      - name: Capture public Looker Studio reports
+      - name: Capture public Looker Studio and Power BI reports
         run: node scripts/capture-reports.mjs
 
       - name: Publish updated images
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add captures/report-1.png captures/report-2.png
+          git add captures/report-1.png captures/report-2.png captures/report-3.png
           if git diff --cached --quiet; then
             echo "Captures are unchanged; no commit needed."
           else
