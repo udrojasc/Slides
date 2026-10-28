@@ -39,8 +39,41 @@
                 <div class="form-row">
                     <label for="transition-mode">Transición</label>
                     <select id="transition-mode">
-                        <option value="fade" selected>Fade</option>
+                        <option value="fade" selected>Desvanecer</option>
+                        <option value="slide">Deslizar</option>
+                        <option value="zoom">Zoom</option>
+                        <option value="rotate3d">Giro 3D</option>
+                        <option value="blur">Desenfoque</option>
+                        <option value="rise">Elevar</option>
+                        <option value="drop">Caer</option>
+                        <option value="rotate">Giro</option>
+                        <option value="wipe">Barrido</option>
+                        <option value="bounce">Rebote</option>
+                        <option value="flip">Volteo vertical</option>
                         <option value="none">Sin transición</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label for="transition-duration">Duración de transición (ms)</label>
+                    <input type="number" id="transition-duration" value="600" min="150" max="1500" step="50">
+                </div>
+                <div class="form-row">
+                    <label for="transition-direction">Dirección</label>
+                    <select id="transition-direction">
+                        <option value="left" selected>Desde la izquierda</option>
+                        <option value="right">Desde la derecha</option>
+                        <option value="up">Desde abajo</option>
+                        <option value="down">Desde arriba</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label for="transition-easing">Curva de movimiento</label>
+                    <select id="transition-easing">
+                        <option value="ease" selected>Suave</option>
+                        <option value="ease-in-out">Suave al inicio y final</option>
+                        <option value="ease-out">Rápida al inicio</option>
+                        <option value="linear">Uniforme</option>
+                        <option value="cubic-bezier(0.34,1.56,0.64,1)">Elástica</option>
                     </select>
                 </div>
                 <div class="form-row">
