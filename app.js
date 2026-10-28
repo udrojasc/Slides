@@ -45,14 +45,20 @@ function detectType(url) {
     try { parsed = new URL(url); } catch (_) { return 'invalid'; }
     if (!['http:', 'https:'].includes(parsed.protocol)) return 'invalid';
 
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    // Mantener los proveedores que admiten el modo iframe.
+    if (host === 'canva.com' || host.endsWith('.canva.com') ||
+        host === 'powerbi.com' || host.endsWith('.powerbi.com') ||
+        host === 'app.powerbi.com' ||
+        host === 'lookerstudio.google.com' || host === 'datastudio.google.com') return 'embed';
+
     const ext = parsed.pathname.split('.').pop()?.toLowerCase() || '';
     const imageExts = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'bmp', 'svg'];
     const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'm4v'];
     if (imageExts.includes(ext)) return 'image';
     if (videoExts.includes(ext)) return 'video';
 
-    // Todo enlace que no parezca un archivo de imagen o video se inspecciona
-    // al agregarlo: si no carga como imagen, se captura como página web.
+    // Todo otro enlace se inspecciona al agregarlo: imagen directa o captura web.
     return 'web';
 }
 
@@ -130,6 +136,32 @@ function captureWebpage(url) {
     apiUrl.searchParams.set('delay', '5000');
     apiUrl.searchParams.set('timeout', '60000');
     return apiUrl.toString();
+}
+
+// Espera a que una captura dinámica haya terminado de cargarse.
+function waitForCapturedImage(layerElement, timeoutMs = 65000) {
+    const image = layerElement.querySelector('img.main-media');
+    if (!image) return Promise.resolve(true);
+    if (image.complete) return Promise.resolve(image.naturalWidth > 0);
+
+    return new Promise(resolve => {
+        let finished = false;
+        const finish = loaded => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            image.removeEventListener('load', onLoad);
+            image.removeEventListener('error', onError);
+            resolve(loaded);
+        };
+        const onLoad = () => finish(image.naturalWidth > 0);
+        const onError = () => finish(false);
+        const timer = setTimeout(() => finish(false), timeoutMs);
+        image.addEventListener('load', onLoad, { once: true });
+        image.addEventListener('error', onError, { once: true });
+        // Evita una carrera si la imagen terminó de cargar justo al añadir eventos.
+        if (image.complete) finish(image.naturalWidth > 0);
+    });
 }
 
 // --- Configuración comprimida para enlaces cortos ---
@@ -503,11 +535,19 @@ function startPlayer(config) {
     player.style.display = 'block';
     controls.classList.remove('visible');
     playPauseBtn.textContent = '⏸';
-    // Cargar primera diapositiva
+    // Cargar primera diapositiva. Para capturas remotas, esperar la imagen
+    // antes de iniciar el temporizador; así no se reinicia mientras sigue cargando.
     loadSlide(0, layerA, true); // activa inmediatamente
-    // Si es video, la transición la maneja el evento ended
-    // Si es imagen, iniciar timer
-    scheduleNext();
+    if (config.items[0]?.capture) {
+        waitForCapturedImage(layerA).then(loaded => {
+            if (playerState.config !== config) return;
+            if (loaded) scheduleNext();
+            else showPlayerMessage('No se pudo cargar la captura. Comprueba el enlace o vuelve a intentarlo.');
+        });
+    } else {
+        // Si es video, la transición la maneja el evento ended; los demás medios usan timer.
+        scheduleNext();
+    }
     // Mostrar controles temporalmente
     showControlsTemporarily();
     // Actualizar contador
@@ -622,6 +662,8 @@ function goToNext() {
     if (playerState.isTransitioning) return;
     const config = playerState.config;
     if (!config) return;
+    // Una única captura es una imagen fija: no volver a solicitarla en cada vuelta.
+    if (config.items.length === 1 && config.items[0]?.capture) return;
     let nextIndex = playerState.currentIndex + 1;
     if (nextIndex >= config.items.length) {
         if (config.loop) {
@@ -662,63 +704,83 @@ function performTransition(newIndex) {
     const hiddenEl = hiddenLayer === 'a' ? layerA : layerB;
     const mode = config.transition || 'fade';
     const duration = mode === 'none' ? 0 : (config.transitionDuration || 600);
-
-    // Detener el contenido de la capa anterior mientras se prepara la siguiente.
-    const oldVideo = activeEl.querySelector('video');
-    if (oldVideo) oldVideo.pause();
+    const nextItem = config.items[newIndex];
 
     loadSlide(newIndex, hiddenEl, false);
-    const video = hiddenEl.querySelector('video');
-    if (video) video.play().catch(() => {});
 
-    if (mode === 'none' || duration === 0) {
-        activeEl.classList.remove('active');
+    const beginTransition = () => {
+        // El contenido entrante ya está listo; ahora sí cambiar de diapositiva.
+        const oldVideo = activeEl.querySelector('video');
+        if (oldVideo) oldVideo.pause();
+        const video = hiddenEl.querySelector('video');
+        if (video) video.play().catch(() => {});
+
+        if (mode === 'none' || duration === 0) {
+            activeEl.classList.remove('active');
+            hiddenEl.classList.add('active');
+            playerState.activeLayer = hiddenLayer;
+            playerState.currentIndex = newIndex;
+            updateCounter();
+            playerState.isTransitioning = false;
+            scheduleNext();
+            activeEl.innerHTML = '';
+            return;
+        }
+
+        // La capa entrante se anima por encima de la anterior.
+        const direction = config.transitionDirection || 'left';
+        hiddenEl.style.zIndex = '2';
+        activeEl.style.zIndex = '1';
+        hiddenEl.style.setProperty('--transition-duration', duration + 'ms');
+        hiddenEl.style.setProperty('--transition-easing', config.transitionEasing || 'ease');
+        hiddenEl.classList.remove('transition-in', 'anim-fade', 'anim-slide', 'anim-zoom', 'anim-rotate3d', 'anim-blur', 'anim-rise', 'anim-drop', 'anim-rotate', 'anim-wipe', 'anim-bounce', 'anim-flip');
+        activeEl.classList.remove('transition-out');
+        hiddenEl.classList.add('transition-in', 'anim-' + mode);
+        hiddenEl.dataset.direction = direction;
         hiddenEl.classList.add('active');
-        playerState.activeLayer = hiddenLayer;
-        playerState.currentIndex = newIndex;
-        updateCounter();
-        playerState.isTransitioning = false;
-        scheduleNext();
+
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                activeEl.classList.add('transition-out');
+                activeEl.classList.remove('active');
+            });
+        });
+
+        window.setTimeout(() => {
+            activeEl.classList.remove('transition-out');
+            hiddenEl.classList.remove('transition-in', 'anim-fade', 'anim-slide', 'anim-zoom', 'anim-rotate3d', 'anim-blur', 'anim-rise', 'anim-drop', 'anim-rotate', 'anim-wipe', 'anim-bounce', 'anim-flip');
+            hiddenEl.style.zIndex = '';
+            activeEl.style.zIndex = '';
+            hiddenEl.style.removeProperty('--transition-duration');
+            hiddenEl.style.removeProperty('--transition-easing');
+            delete hiddenEl.dataset.direction;
+            playerState.activeLayer = hiddenLayer;
+            playerState.currentIndex = newIndex;
+            updateCounter();
+            playerState.isTransitioning = false;
+            scheduleNext();
+            // Limpiar la capa anterior solo después de la animación.
+            activeEl.innerHTML = '';
+        }, duration + 40);
+    };
+
+    if (nextItem?.capture) {
+        waitForCapturedImage(hiddenEl).then(loaded => {
+            if (playerState.config !== config) return;
+            if (loaded) {
+                beginTransition();
+            } else {
+                hiddenEl.innerHTML = '';
+                playerState.isTransitioning = false;
+                showPlayerMessage('No se pudo cargar la captura siguiente; mantengo la diapositiva actual.');
+                scheduleNext();
+            }
+        });
         return;
     }
 
-    // La capa entrante se anima por encima de la anterior.
-    const direction = config.transitionDirection || 'left';
-    hiddenEl.style.zIndex = '2';
-    activeEl.style.zIndex = '1';
-    hiddenEl.style.setProperty('--transition-duration', duration + 'ms');
-    hiddenEl.style.setProperty('--transition-easing', config.transitionEasing || 'ease');
-    hiddenEl.classList.remove('transition-in', 'anim-fade', 'anim-slide', 'anim-zoom', 'anim-rotate3d', 'anim-blur', 'anim-rise', 'anim-drop', 'anim-rotate', 'anim-wipe', 'anim-bounce', 'anim-flip');
-    activeEl.classList.remove('transition-out');
-    hiddenEl.classList.add('transition-in', 'anim-' + mode);
-    hiddenEl.dataset.direction = direction;
-    hiddenEl.classList.add('active');
-
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-            activeEl.classList.add('transition-out');
-            activeEl.classList.remove('active');
-        });
-    });
-
-    window.setTimeout(() => {
-        activeEl.classList.remove('transition-out');
-        hiddenEl.classList.remove('transition-in', 'anim-fade', 'anim-slide', 'anim-zoom', 'anim-rotate3d', 'anim-blur', 'anim-rise', 'anim-drop', 'anim-rotate', 'anim-wipe', 'anim-bounce', 'anim-flip');
-        hiddenEl.style.zIndex = '';
-        activeEl.style.zIndex = '';
-        hiddenEl.style.removeProperty('--transition-duration');
-        hiddenEl.style.removeProperty('--transition-easing');
-        delete hiddenEl.dataset.direction;
-        playerState.activeLayer = hiddenLayer;
-        playerState.currentIndex = newIndex;
-        updateCounter();
-        playerState.isTransitioning = false;
-        scheduleNext();
-        // Limpiar la capa anterior después de la animación.
-        activeEl.innerHTML = '';
-    }, duration + 40);
+    beginTransition();
 }
-
 function scheduleNext() {
     // Limpiar timer anterior
     if (playerState.timer) {
@@ -743,7 +805,10 @@ function scheduleNext() {
         return;
     }
     
-    // Imagen/GIF: programar siguiente
+    // Una captura dinámica en solitario no necesita recargarse cada vuelta.
+    if (item.capture && config.items.length === 1) return;
+
+    // Imagen/GIF: programar siguiente. Las capturas ya están cargadas al llegar aquí.
     const duration = (config.duration || 5) * 1000;
     playerState.timer = setTimeout(() => {
         if (playerState.isPlaying) {
