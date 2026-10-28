@@ -85,6 +85,18 @@ function getEmbedUrl(rawUrl) {
     return rawUrl;
 }
 
+// Añade una versión al mostrar capturas generadas automáticamente para evitar caché antigua.
+function getImageUrlForDisplay(rawUrl) {
+    try {
+        const parsed = new URL(rawUrl, window.location.href);
+        if (/\/captures\/report-\d+\.png$/i.test(parsed.pathname)) {
+            parsed.searchParams.set('v', Date.now().toString());
+            return parsed.toString();
+        }
+    } catch (_) {}
+    return rawUrl;
+}
+
 // --- Configuración comprimida para enlaces cortos ---
 // Los enlaces antiguos en Base64 siguen siendo compatibles.
 function encodeConfig(config) {
@@ -449,7 +461,7 @@ function loadSlide(index, layerElement, makeActive) {
     if (fit === 'contain-blur' && mediaType === 'image') {
         const bg = document.createElement('img');
         bg.className = 'bg-blur';
-        bg.src = item.url;
+        bg.src = getImageUrlForDisplay(item.url);
         bg.alt = 'background blur';
         bg.onerror = () => { bg.style.display = 'none'; };
         container.appendChild(bg);
@@ -473,7 +485,7 @@ function loadSlide(index, layerElement, makeActive) {
         container.appendChild(main);
     } else if (mediaType === 'video') {
         main = document.createElement('video');
-        main.src = item.url;
+        main.src = getImageUrlForDisplay(item.url);
         main.className = `main-media ${mainClass}`;
         main.muted = true;
         main.playsInline = true;
@@ -489,7 +501,7 @@ function loadSlide(index, layerElement, makeActive) {
     } else {
         main = document.createElement('img');
         main.className = `main-media ${mainClass}`;
-        main.src = item.url;
+        main.src = getImageUrlForDisplay(item.url);
         main.alt = 'slide';
         main.onerror = () => {
             showSlideError(container, 'No se pudo cargar la imagen');
