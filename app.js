@@ -118,28 +118,40 @@ function probeImage(url, timeoutMs = 8000) {
             clearTimeout(timer);
             img.onload = null;
             img.onerror = null;
+            if (!result) img.src = 'data:,';
             resolve(result);
         };
         const timer = setTimeout(() => finish(false), timeoutMs);
-        img.onload = () => finish(true);
+        img.onload = () => finish(img.naturalWidth > 0);
         img.onerror = () => finish(false);
         img.src = url;
     });
 }
 
-// Construye una URL de captura de PageShot.
- // La API devuelve la imagen directamente: no exige clave ni cuota diaria publicada.
- // Cada carga puede generar una captura nueva; el servicio no almacena las imágenes.
-function captureWebpage(url) {
-    const apiUrl = new URL('https://pageshot.site/v1/screenshot');
-    apiUrl.searchParams.set('url', url);
-    apiUrl.searchParams.set('width', '1920');
-    apiUrl.searchParams.set('height', '1080');
-    apiUrl.searchParams.set('format', 'png');
-    apiUrl.searchParams.set('full_page', 'false');
-    apiUrl.searchParams.set('delay', '5000');
-    apiUrl.searchParams.set('timeout', '60000');
-    return apiUrl.toString();
+// Devuelve dos vías de captura: imagen de pantalla completa y, como respaldo,
+// una vista previa más ligera. No se envía timeout=60000 porque podía provocar
+// esperas largas en páginas con muchas conexiones persistentes (p. ej. GitHub).
+function captureWebpageCandidates(url) {
+    const screenshotUrl = new URL('https://pageshot.site/v1/screenshot');
+    screenshotUrl.searchParams.set('url', url);
+    screenshotUrl.searchParams.set('width', '1920');
+    screenshotUrl.searchParams.set('height', '1080');
+    screenshotUrl.searchParams.set('format', 'png');
+    screenshotUrl.searchParams.set('fullPage', 'false');
+    screenshotUrl.searchParams.set('wait_until', 'domcontentloaded');
+    screenshotUrl.searchParams.set('delay', '1000');
+    screenshotUrl.searchParams.set('block_ads', 'true');
+    screenshotUrl.searchParams.set('hide_banners', 'true');
+
+    const previewUrl = new URL('https://pageshot.site/v1/preview');
+    previewUrl.searchParams.set('url', url);
+    previewUrl.searchParams.set('width', '800');
+    previewUrl.searchParams.set('dark_mode', 'false');
+
+    return [
+        { url: screenshotUrl.toString(), timeoutMs: 25000, label: 'captura HD' },
+        { url: previewUrl.toString(), timeoutMs: 17000, label: 'vista previa ligera' }
+    ];
 }
 
 // Espera a que una captura dinámica haya terminado de cargarse.
@@ -382,12 +394,20 @@ async function addMediaItem(url) {
             if (await probeImage(canonicalUrl)) {
                 item = { url: canonicalUrl, type: 'image' };
             } else {
-                button.textContent = 'Capturando página...';
-                const screenshotUrl = captureWebpage(canonicalUrl);
-                // Esperar a que PageShot devuelva la imagen real, no solo construir la URL.
-                const screenshotLoaded = await probeImage(screenshotUrl, 65000);
-                if (!screenshotLoaded) {
-                    throw new Error('La captura no llegó en 65 segundos. La página puede ser lenta o estar bloqueada.');
+                const captureCandidates = captureWebpageCandidates(canonicalUrl);
+                let screenshotUrl = null;
+                for (let i = 0; i < captureCandidates.length; i++) {
+                    const candidate = captureCandidates[i];
+                    button.textContent = i === 0
+                        ? 'Capturando página...'
+                        : 'Probando captura ligera...';
+                    if (await probeImage(candidate.url, candidate.timeoutMs)) {
+                        screenshotUrl = candidate.url;
+                        break;
+                    }
+                }
+                if (!screenshotUrl) {
+                    throw new Error('No se pudo generar la captura. PageShot no respondió dentro del tiempo esperado o la página bloquea la captura.');
                 }
                 item = {
                     url: screenshotUrl,
