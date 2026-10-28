@@ -206,8 +206,8 @@ function updateCaptureRefreshStatus() {
     const remaining = Math.max(0, (playerState.nextCaptureCheckAt || Date.now()) - Date.now());
     captureRefreshTimerText.textContent = 'Próxima recarga: ' + formatCountdown(remaining);
     captureRefreshDetail.textContent = playerState.lastCaptureCheckAt
-        ? 'Última revisión ' + formatClock(playerState.lastCaptureCheckAt) + ' · capturas nuevas aprox. cada 10 min'
-        : 'Primera revisión en curso · capturas nuevas aprox. cada 10 min';
+        ? 'Última recarga ' + formatClock(playerState.lastCaptureCheckAt) + ' · fuente cada ~10 min'
+        : 'La fuente se renueva aproximadamente cada 10 min';
 }
 
 function stopCaptureRefreshMonitoring() {
@@ -674,6 +674,15 @@ function startPlayer(config) {
         showPlayerMessage('No hay elementos para reproducir.');
         return;
     }
+    // Migrar presentaciones antiguas: los dashboards conocidos pasan a usar la captura local.
+    config.items = config.items.map(item => {
+        if (!item) return item;
+        const originalUrl = item.sourceUrl || item.url;
+        const captureUrl = getKnownDashboardCapture(originalUrl);
+        return captureUrl
+            ? { ...item, url: captureUrl, type: 'image', sourceUrl: originalUrl, capture: true }
+            : item;
+    });
     // Normalizar opciones para que también funcionen enlaces antiguos.
     config.transition = config.transition || 'fade';
     config.transitionDuration = Math.min(1500, Math.max(150, Number(config.transitionDuration) || 600));
