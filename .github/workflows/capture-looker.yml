@@ -1,0 +1,46 @@
+name: Refresh Looker Studio captures
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: looker-captures
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Capture public Looker Studio reports
+        run: node scripts/capture-reports.mjs
+
+      - name: Publish updated images
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add captures/report-1.png captures/report-2.png
+          if git diff --cached --quiet; then
+            echo "Captures are unchanged; no commit needed."
+          else
+            git commit -m "Refresh Looker Studio captures"
+            git push
+          fi
