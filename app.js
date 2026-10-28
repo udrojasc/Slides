@@ -51,11 +51,15 @@ function detectType(url) {
     return 'image'; // por defecto
 }
 
-// --- Codificación / Decodificación URL-safe Base64 ---
+// --- Configuración comprimida para enlaces cortos ---
+// Los enlaces antiguos en Base64 siguen siendo compatibles.
 function encodeConfig(config) {
     const json = JSON.stringify(config);
-    // Base64 URL-safe (sin padding)
-    return btoa(unescape(encodeURIComponent(json)))
+    if (window.LZString) {
+        return 'z1.' + LZString.compressToEncodedURIComponent(json);
+    }
+    // Respaldo compatible si la librería de compresión no carga.
+    return 'b1.' + btoa(unescape(encodeURIComponent(json)))
         .replace(/\+/g, '-')
         .replace(/\//g, '_')
         .replace(/=+$/, '');
@@ -63,9 +67,14 @@ function encodeConfig(config) {
 
 function decodeConfig(encoded) {
     try {
-        // Reemplazar caracteres URL-safe
+        if (encoded.startsWith('z1.')) {
+            if (!window.LZString) return null;
+            const json = LZString.decompressFromEncodedURIComponent(encoded.slice(3));
+            return json ? JSON.parse(json) : null;
+        }
+        if (encoded.startsWith('b1.')) encoded = encoded.slice(3);
+        // Formato anterior: Base64 URL-safe sin prefijo.
         let base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
-        // Añadir padding si falta
         while (base64.length % 4) base64 += '=';
         const json = decodeURIComponent(escape(atob(base64)));
         return JSON.parse(json);
