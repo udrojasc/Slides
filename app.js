@@ -45,13 +45,9 @@ function detectType(url) {
     try { parsed = new URL(url); } catch (_) { return 'invalid'; }
     if (!['http:', 'https:'].includes(parsed.protocol)) return 'invalid';
 
-    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-    // Mantener los proveedores que admiten el modo iframe.
-    if (host === 'canva.com' || host.endsWith('.canva.com') ||
-        host === 'powerbi.com' || host.endsWith('.powerbi.com') ||
-        host === 'app.powerbi.com' ||
-        host === 'lookerstudio.google.com' || host === 'datastudio.google.com') return 'embed';
-
+    // Solo los archivos multimedia directos evitan la conversión a captura.
+    // También los enlaces de Canva, Power BI y Looker Studio deben pasar por captura
+    // cuando se agregan nuevos medios; los embeds guardados anteriormente siguen funcionando.
     const ext = parsed.pathname.split('.').pop()?.toLowerCase() || '';
     const imageExts = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'bmp', 'svg'];
     const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'm4v'];
