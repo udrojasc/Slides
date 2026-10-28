@@ -117,41 +117,19 @@ function probeImage(url, timeoutMs = 8000) {
     });
 }
 
-// Toma una captura de la página en el momento de agregarla al editor.
-// Microlink genera la imagen en un navegador remoto y devuelve una URL CDN.
-async function captureWebpage(url) {
-    const apiUrl = new URL('https://api.microlink.io/');
+// Construye una URL de captura de PageShot.
+ // La API devuelve la imagen directamente: no exige clave ni cuota diaria publicada.
+ // Cada carga puede generar una captura nueva; el servicio no almacena las imágenes.
+function captureWebpage(url) {
+    const apiUrl = new URL('https://pageshot.site/v1/screenshot');
     apiUrl.searchParams.set('url', url);
-    apiUrl.searchParams.set('screenshot', 'true');
-    apiUrl.searchParams.set('meta', 'false');
-    apiUrl.searchParams.set('force', 'true');
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90000);
-    try {
-        const response = await fetch(apiUrl.toString(), { signal: controller.signal });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            throw new Error(payload.message || `El servicio de capturas respondió HTTP ${response.status}.`);
-        }
-
-        const screenshotUrl = payload?.data?.screenshot?.url;
-        if (payload?.status !== 'success' || !screenshotUrl) {
-            throw new Error(
-                payload?.message ||
-                payload?.error?.message ||
-                'El servicio no pudo generar la captura. La página puede ser privada, bloquear capturas automáticas o haber agotado la cuota gratuita.'
-            );
-        }
-        return screenshotUrl;
-    } catch (error) {
-        if (error?.name === 'AbortError') {
-            throw new Error('La captura tardó más de 90 segundos.');
-        }
-        throw error;
-    } finally {
-        clearTimeout(timeout);
-    }
+    apiUrl.searchParams.set('width', '1920');
+    apiUrl.searchParams.set('height', '1080');
+    apiUrl.searchParams.set('format', 'png');
+    apiUrl.searchParams.set('full_page', 'false');
+    apiUrl.searchParams.set('delay', '5000');
+    apiUrl.searchParams.set('timeout', '60000');
+    return apiUrl.toString();
 }
 
 // --- Configuración comprimida para enlaces cortos ---
@@ -552,7 +530,7 @@ function loadSlide(index, layerElement, makeActive) {
     container.className = 'slide-content';
     
     // Fondo blur solo para imágenes; los dashboards usan todo el lienzo.
-    if (fit === 'contain-blur' && mediaType === 'image') {
+    if (fit === 'contain-blur' && mediaType === 'image' && !item.capture) {
         const bg = document.createElement('img');
         bg.className = 'bg-blur';
         bg.src = getImageUrlForDisplay(item.url);
