@@ -269,20 +269,64 @@ function renderLocalSaves() {
     });
 }
 
-// --- Copiar URL ---
-function copyUrlFromConfig(config) {
+// --- Acortar URL automáticamente sin cuenta ni configuración ---
+function shortenUrlAutomatically(longUrl) {
+    return new Promise((resolve, reject) => {
+        const callbackName = '__urlSlideshowShort_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        const script = document.createElement('script');
+        let finished = false;
+        const cleanup = () => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timeout);
+            script.remove();
+            try { delete window[callbackName]; } catch (_) { window[callbackName] = undefined; }
+        };
+        const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error('El servicio de enlaces cortos no respondió.'));
+        }, 10000);
+        window[callbackName] = (data) => {
+            const shortUrl = data && data.shorturl;
+            cleanup();
+            if (typeof shortUrl === 'string' && /^https:\/\/is\.gd\/[A-Za-z0-9]+$/.test(shortUrl)) resolve(shortUrl);
+            else reject(new Error((data && data.errormessage) || 'No se pudo acortar el enlace.'));
+        };
+        script.onerror = () => {
+            cleanup();
+            reject(new Error('No se pudo conectar con el servicio de enlaces cortos.'));
+        };
+        script.src = 'https://is.gd/create.php?format=json&callback=' +
+            encodeURIComponent(callbackName) + '&url=' + encodeURIComponent(longUrl);
+        document.head.appendChild(script);
+    });
+}
+
+async function copyUrlFromConfig(config) {
     if (!config || config.items.length === 0) {
         alert('No hay medios para generar una URL.');
         return;
     }
     const encoded = encodeConfig(config);
-    const url = window.location.href.split('#')[0] + '#play=' + encoded;
-    navigator.clipboard.writeText(url).then(() => {
-        alert('✅ URL copiada al portapapeles:\n' + url);
-    }).catch(() => {
-        // fallback
-        prompt('Copia esta URL:', url);
-    });
+    const longUrl = window.location.href.split('#')[0] + '#play=' + encoded;
+    const cacheKey = 'urlSlideshow_short_' + longUrl;
+    let shareUrl = localStorage.getItem(cacheKey);
+    try {
+        if (!shareUrl) {
+            shareUrl = await shortenUrlAutomatically(longUrl);
+            try { localStorage.setItem(cacheKey, shareUrl); } catch (_) {}
+        }
+        await navigator.clipboard.writeText(shareUrl);
+        alert('✅ Enlace corto copiado:\n' + shareUrl);
+    } catch (error) {
+        // Si el acortador falla, la presentación sigue siendo compartible.
+        try {
+            await navigator.clipboard.writeText(longUrl);
+            alert('No se pudo crear un enlace corto. Copié el enlace completo para que puedas compartirlo:\n' + longUrl);
+        } catch (_) {
+            prompt('Copia este enlace para compartir la presentación:', longUrl);
+        }
+    }
 }
 
 function copyCurrentUrl() {
@@ -715,10 +759,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('save-btn').addEventListener('click', () => {
         const config = saveToLocalStorage();
         if (config) {
-            // Generar y mostrar URL en consola (opcional)
-            const encoded = encodeConfig(config);
-            const url = window.location.href.split('#')[0] + '#play=' + encoded;
-            alert('✅ Presentación guardada localmente.\nURL generada (cópiala con el botón "Copiar URL"):\n' + url);
+            alert('✅ Presentación guardada en este navegador. Para compartirla, usa «Copiar URL»: el enlace corto se generará automáticamente.');
         }
     });
     
