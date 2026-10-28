@@ -209,7 +209,8 @@ async function addMediaItem(url) {
     const detectedType = detectType(canonicalUrl);
     let item;
 
-    if (detectedType === 'image' || detectedType === 'video') {
+    if (detectedType === 'image' || detectedType === 'video' || detectedType === 'embed') {
+        // Medios conocidos que funcionan dentro de un iframe se conservan como tales.
         item = { url: canonicalUrl, type: detectedType };
     } else {
         const button = $('add-media-btn');
