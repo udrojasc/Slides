@@ -156,12 +156,18 @@ function getCurrentConfig() {
     const duration = parseFloat($('slide-duration').value) || 5;
     const fit = $('fit-mode').value;
     const transition = $('transition-mode').value;
+    const transitionDuration = Math.min(1500, Math.max(150, parseInt($('transition-duration').value, 10) || 600));
+    const transitionDirection = $('transition-direction').value;
+    const transitionEasing = $('transition-easing').value;
     const loop = $('loop-mode').checked;
     return {
         name,
         duration,
         fit,
         transition,
+        transitionDuration,
+        transitionDirection,
+        transitionEasing,
         loop,
         items: editorState.items.slice() // copia
     };
@@ -173,6 +179,9 @@ function loadConfigToEditor(config) {
     $('slide-duration').value = config.duration || 5;
     $('fit-mode').value = config.fit || 'contain-blur';
     $('transition-mode').value = config.transition || 'fade';
+    $('transition-duration').value = config.transitionDuration || 600;
+    $('transition-direction').value = config.transitionDirection || 'left';
+    $('transition-easing').value = config.transitionEasing || 'ease';
     $('loop-mode').checked = config.loop !== undefined ? config.loop : true;
     editorState.items = (config.items || []).slice();
     renderMediaList();
@@ -292,6 +301,11 @@ function startPlayer(config) {
         showPlayerMessage('No hay elementos para reproducir.');
         return;
     }
+    // Normalizar opciones para que también funcionen enlaces antiguos.
+    config.transition = config.transition || 'fade';
+    config.transitionDuration = Math.min(1500, Math.max(150, Number(config.transitionDuration) || 600));
+    config.transitionDirection = ['left', 'right', 'up', 'down'].includes(config.transitionDirection) ? config.transitionDirection : 'left';
+    config.transitionEasing = config.transitionEasing || 'ease';
     // Detener cualquier reproducción anterior
     stopPlayer();
     playerState.config = config;
@@ -455,24 +469,23 @@ function performTransition(newIndex) {
     const config = playerState.config;
     if (!config) return;
     playerState.isTransitioning = true;
-    // Determinar capas
+
     const activeLayer = playerState.activeLayer;
-    const hiddenLayer = (activeLayer === 'a') ? 'b' : 'a';
-    const activeEl = (activeLayer === 'a') ? layerA : layerB;
-    const hiddenEl = (hiddenLayer === 'a') ? layerA : layerB;
-    
-    // Cargar nuevo slide en capa oculta (sin activar)
+    const hiddenLayer = activeLayer === 'a' ? 'b' : 'a';
+    const activeEl = activeLayer === 'a' ? layerA : layerB;
+    const hiddenEl = hiddenLayer === 'a' ? layerA : layerB;
+    const mode = config.transition || 'fade';
+    const duration = mode === 'none' ? 0 : (config.transitionDuration || 600);
+
+    // Detener el contenido de la capa anterior mientras se prepara la siguiente.
+    const oldVideo = activeEl.querySelector('video');
+    if (oldVideo) oldVideo.pause();
+
     loadSlide(newIndex, hiddenEl, false);
-    
-    // Si es video en la nueva capa, iniciar reproducción
     const video = hiddenEl.querySelector('video');
-    if (video) {
-        video.play().catch(() => {});
-    }
-    
-    const transitionMode = config.transition || 'fade';
-    if (transitionMode === 'none') {
-        // Cambio instantáneo
+    if (video) video.play().catch(() => {});
+
+    if (mode === 'none' || duration === 0) {
         activeEl.classList.remove('active');
         hiddenEl.classList.add('active');
         playerState.activeLayer = hiddenLayer;
@@ -482,26 +495,42 @@ function performTransition(newIndex) {
         scheduleNext();
         return;
     }
-    
-    // Fade: activar capa oculta, desactivar activa
+
+    // La capa entrante se anima por encima de la anterior.
+    const direction = config.transitionDirection || 'left';
+    hiddenEl.style.zIndex = '2';
+    activeEl.style.zIndex = '1';
+    hiddenEl.style.setProperty('--transition-duration', duration + 'ms');
+    hiddenEl.style.setProperty('--transition-easing', config.transitionEasing || 'ease');
+    hiddenEl.classList.remove('transition-in', 'anim-fade', 'anim-slide', 'anim-zoom', 'anim-rotate3d', 'anim-blur', 'anim-rise', 'anim-drop', 'anim-rotate', 'anim-wipe', 'anim-bounce', 'anim-flip');
+    activeEl.classList.remove('transition-out');
+    hiddenEl.classList.add('transition-in', 'anim-' + mode);
+    hiddenEl.dataset.direction = direction;
     hiddenEl.classList.add('active');
-    // Pequeño delay para asegurar que el render ocurra
+
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
+            activeEl.classList.add('transition-out');
             activeEl.classList.remove('active');
-            // Actualizar estado después de la transición
-            setTimeout(() => {
-                playerState.activeLayer = hiddenLayer;
-                playerState.currentIndex = newIndex;
-                updateCounter();
-                playerState.isTransitioning = false;
-                scheduleNext();
-                // Si el video en la capa antigua estaba reproduciéndose, pausarlo
-                const oldVideo = activeEl.querySelector('video');
-                if (oldVideo) oldVideo.pause();
-            }, 400); // duración de la transición CSS (0.8s, pero 400ms es suficiente para el cambio visual)
         });
     });
+
+    window.setTimeout(() => {
+        activeEl.classList.remove('transition-out');
+        hiddenEl.classList.remove('transition-in', 'anim-fade', 'anim-slide', 'anim-zoom', 'anim-rotate3d', 'anim-blur', 'anim-rise', 'anim-drop', 'anim-rotate', 'anim-wipe', 'anim-bounce', 'anim-flip');
+        hiddenEl.style.zIndex = '';
+        activeEl.style.zIndex = '';
+        hiddenEl.style.removeProperty('--transition-duration');
+        hiddenEl.style.removeProperty('--transition-easing');
+        delete hiddenEl.dataset.direction;
+        playerState.activeLayer = hiddenLayer;
+        playerState.currentIndex = newIndex;
+        updateCounter();
+        playerState.isTransitioning = false;
+        scheduleNext();
+        // Limpiar la capa anterior después de la animación.
+        activeEl.innerHTML = '';
+    }, duration + 40);
 }
 
 function scheduleNext() {
