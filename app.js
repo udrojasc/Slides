@@ -206,7 +206,7 @@ function updateCaptureRefreshStatus() {
     const remaining = Math.max(0, (playerState.nextCaptureCheckAt || Date.now()) - Date.now());
     captureRefreshTimerText.textContent = 'Próxima recarga: ' + formatCountdown(remaining);
     captureRefreshDetail.textContent = playerState.lastCaptureCheckAt
-        ? 'Última recarga ' + formatClock(playerState.lastCaptureCheckAt) + ' · fuente cada ~10 min'
+        ? 'Última comprobación ' + formatClock(playerState.lastCaptureCheckAt) + ' · fuente cada ~10 min'
         : 'La fuente se renueva aproximadamente cada 10 min';
 }
 
