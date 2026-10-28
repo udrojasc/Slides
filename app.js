@@ -132,24 +132,27 @@ function probeImage(url, timeoutMs = 8000) {
 // una vista previa más ligera. No se envía timeout=60000 porque podía provocar
 // esperas largas en páginas con muchas conexiones persistentes (p. ej. GitHub).
 function captureWebpageCandidates(url) {
+    // Parámetros documentados para GET /v1/screenshot.
     const screenshotUrl = new URL('https://pageshot.site/v1/screenshot');
     screenshotUrl.searchParams.set('url', url);
     screenshotUrl.searchParams.set('width', '1920');
     screenshotUrl.searchParams.set('height', '1080');
     screenshotUrl.searchParams.set('format', 'png');
-    screenshotUrl.searchParams.set('fullPage', 'false');
+    screenshotUrl.searchParams.set('full_page', 'false');
     screenshotUrl.searchParams.set('wait_until', 'domcontentloaded');
-    screenshotUrl.searchParams.set('delay', '1000');
+    screenshotUrl.searchParams.set('timeout', '20000');
+    screenshotUrl.searchParams.set('delay', '500');
     screenshotUrl.searchParams.set('block_ads', 'true');
     screenshotUrl.searchParams.set('hide_banners', 'true');
 
+    // El endpoint preview está optimizado para páginas que tardan en renderizar.
     const previewUrl = new URL('https://pageshot.site/v1/preview');
     previewUrl.searchParams.set('url', url);
     previewUrl.searchParams.set('width', '800');
     previewUrl.searchParams.set('dark_mode', 'false');
 
     return [
-        { url: screenshotUrl.toString(), timeoutMs: 25000, label: 'captura HD' },
+        { url: screenshotUrl.toString(), timeoutMs: 23000, label: 'captura HD' },
         { url: previewUrl.toString(), timeoutMs: 17000, label: 'vista previa ligera' }
     ];
 }
