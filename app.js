@@ -145,15 +145,20 @@ function captureWebpageCandidates(url) {
     screenshotUrl.searchParams.set('block_ads', 'true');
     screenshotUrl.searchParams.set('hide_banners', 'true');
 
-    // El endpoint preview está optimizado para páginas que tardan en renderizar.
+    // Vista previa optimizada de PageShot como segundo intento.
     const previewUrl = new URL('https://pageshot.site/v1/preview');
     previewUrl.searchParams.set('url', url);
     previewUrl.searchParams.set('width', '800');
     previewUrl.searchParams.set('dark_mode', 'false');
 
+    // Tercer proveedor independiente. Su plan gratuito tiene límite de uso;
+    // se usa únicamente como respaldo si PageShot no entrega una imagen.
+    const thumUrl = 'https://image.thum.io/get/width/1200/crop/900/noanimate/' + url;
+
     return [
-        { url: screenshotUrl.toString(), timeoutMs: 23000, label: 'captura HD' },
-        { url: previewUrl.toString(), timeoutMs: 17000, label: 'vista previa ligera' }
+        { url: screenshotUrl.toString(), timeoutMs: 18000, label: 'captura HD (PageShot)' },
+        { url: previewUrl.toString(), timeoutMs: 13000, label: 'vista previa (PageShot)' },
+        { url: thumUrl, timeoutMs: 18000, label: 'respaldo (Thum.io)' }
     ];
 }
 
@@ -399,18 +404,20 @@ async function addMediaItem(url) {
             } else {
                 const captureCandidates = captureWebpageCandidates(canonicalUrl);
                 let screenshotUrl = null;
-                for (let i = 0; i < captureCandidates.length; i++) {
-                    const candidate = captureCandidates[i];
-                    button.textContent = i === 0
-                        ? 'Capturando página...'
-                        : 'Probando captura ligera...';
+                const failedServices = [];
+                for (const candidate of captureCandidates) {
+                    button.textContent = 'Probando ' + candidate.label + '…';
                     if (await probeImage(candidate.url, candidate.timeoutMs)) {
                         screenshotUrl = candidate.url;
                         break;
                     }
+                    failedServices.push(candidate.label);
                 }
                 if (!screenshotUrl) {
-                    throw new Error('No se pudo generar la captura. PageShot no respondió dentro del tiempo esperado o la página bloquea la captura.');
+                    throw new Error(
+                        'Ninguno de los servicios devolvió una imagen válida (' + failedServices.join(', ') + '). ' +
+                        'Puede ser una caída temporal del proveedor o un bloqueo de la página. Prueba de nuevo en unos minutos.'
+                    );
                 }
                 item = {
                     url: screenshotUrl,
@@ -1148,7 +1155,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(
                 'No se pudo capturar esta página.\n\n' +
                 (error?.message || 'Error desconocido.') +
-                '\n\nPageShot no publica cupo diario o mensual, pero limita a 30 solicitudes por minuto por IP. Las páginas privadas o protegidas pueden no funcionar.'
+                '\n\nProbé dos endpoints de PageShot y un servicio alternativo. Las páginas privadas, protegidas o que bloquean capturas pueden fallar.'
             );
         }
     });
