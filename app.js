@@ -46,6 +46,7 @@ const playerMessage = $('player-message');
 const captureRefreshStatus = $('capture-refresh-status');
 const captureRefreshTimerText = $('capture-refresh-timer');
 const captureRefreshDetail = $('capture-refresh-detail');
+const editorCaptureCountdown = $('editor-capture-countdown');
 
 // --- Utilidades ---
 function detectType(url) {
@@ -304,6 +305,17 @@ function startCaptureRefreshMonitoring() {
         refreshVisibleScheduledCapture,
         CAPTURE_RELOAD_INTERVAL_MS
     );
+}
+
+// Cuenta atrás visible a la siguiente marca de 10 minutos del horario cron.
+// Es una hora programada aproximada: GitHub Actions y Pages pueden tardar más en publicar.
+const CAPTURE_SCHEDULE_INTERVAL_MS = 10 * 60 * 1000;
+
+function updateEditorCaptureCountdown() {
+    if (!editorCaptureCountdown) return;
+    const now = Date.now();
+    const remaining = CAPTURE_SCHEDULE_INTERVAL_MS - (now % CAPTURE_SCHEDULE_INTERVAL_MS);
+    editorCaptureCountdown.textContent = formatCountdown(remaining);
 }
 
 // --- Configuración comprimida para enlaces cortos ---
@@ -1139,6 +1151,10 @@ function initFromHash() {
 
 // --- Event listeners ---
 document.addEventListener('DOMContentLoaded', () => {
+    // Mostrar desde el editor la cuenta atrás hasta la próxima ejecución programada.
+    updateEditorCaptureCountdown();
+    window.setInterval(updateEditorCaptureCountdown, 1000);
+
     // Editor: agregar medio
     $('add-media-btn').addEventListener('click', async () => {
         const input = $('media-url');
