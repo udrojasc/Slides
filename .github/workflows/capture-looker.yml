@@ -43,7 +43,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add captures/report-1.png captures/report-2.png captures/report-3.png
+          git add captures/*.png
           if git diff --cached --quiet; then
             echo "Captures are unchanged; no commit needed."
           else
