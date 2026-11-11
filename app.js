@@ -377,7 +377,8 @@ function getKnownDashboardCapture(rawUrl) {
         const reportId = match[1].toLowerCase();
         const knownLooker = {
             '53a75d46-1e56-4252-b957-67d57077bde2': 'report-1.png',
-            'd48a4893-4559-4a61-945c-5e91c5d1f90f': 'report-2.png'
+            'd48a4893-4559-4a61-945c-5e91c5d1f90f': 'report-2.png',
+            '243472f7-689e-4d6a-b517-a6e73cc3603b': 'report-4.png'
         };
         const file = knownLooker[reportId];
         return file ? new URL('captures/' + file, window.location.href.split('#')[0]).toString() : null;
