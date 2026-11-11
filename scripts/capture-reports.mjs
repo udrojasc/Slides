@@ -101,6 +101,7 @@ async function inspectFrames(page) {
           documentHeight: Math.max(root?.scrollHeight || 0, body?.scrollHeight || 0),
           textLength: text.length,
           textPreview: text.slice(0, 350),
+          textForChecks: text.slice(0, 10000),
           canvasCount: [...document.querySelectorAll('canvas')].filter(visible).length,
           svgCount: [...document.querySelectorAll('svg')].filter(visible).length,
           loadedImageCount: [...document.images].filter(image =>
@@ -161,7 +162,7 @@ async function waitForStableReport(page, report) {
   while (Date.now() <= deadline) {
     const diagnostics = await inspectFrames(page);
     lastDiagnostics = diagnostics;
-    const combinedText = diagnostics.map(frame => frame.textPreview || '').join(' ');
+    const combinedText = diagnostics.map(frame => frame.textForChecks || frame.textPreview || '').join(' ');
     const contentElements = diagnostics.reduce((total, frame) =>
       total + (frame.canvasCount || 0) + (frame.svgCount || 0) + (frame.loadedImageCount || 0), 0
     );
