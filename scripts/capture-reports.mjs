@@ -15,6 +15,15 @@ const reports = [
     ],
   },
   {
+    id: 'report-4',
+    // New public Looker Studio report requested for Slides.
+    url: 'https://lookerstudio.google.com/embed/reporting/243472f7-689e-4d6a-b517-a6e73cc3603b/page/aSU2F',
+    fallbackUrls: [
+      'https://datastudio.google.com/embed/reporting/243472f7-689e-4d6a-b517-a6e73cc3603b/page/aSU2F',
+    ],
+    waitMs: 65000,
+  },
+  {
     id: 'report-3',
     // Power BI Publish to web link supplied by the user.
     url: 'https://app.powerbi.com/view?r=eyJrIjoiY2RmNWJiMGMtYjRkYi00MWI3LWI1OTYtMWFjZDdhNzQzZGFkIiwidCI6IjdlYWIxY2VkLWNkZTUtNDZjYS04NDQwLWRkM2M1ZTU3ZjdhZiIsImMiOjR9',
