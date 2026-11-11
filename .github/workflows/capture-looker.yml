@@ -21,7 +21,7 @@ concurrency:
 jobs:
   capture:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
 
       - name: Install Playwright and Chromium
         run: |
-          npm install --no-save playwright
+          npm install --no-save playwright pngjs
           npx playwright install --with-deps chromium
 
       - name: Capture public Looker Studio and Power BI reports
