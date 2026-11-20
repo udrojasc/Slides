@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SLIDES SIMPLE</title>
+<style>
+:root{color-scheme:dark;--bg:#090b10;--panel:#121722;--line:#263244;--muted:#9ba9bc;--accent:#e34b55;--text:#f4f6fa}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 15% 0,#24202a 0,transparent 45%),var(--bg);color:var(--text);font:15px/1.5 Inter,Segoe UI,Arial,sans-serif}
+header{padding:28px max(20px,calc((100% - 1050px)/2));border-bottom:1px solid var(--line);background:#0c1018dd}
+.brand{font-size:12px;letter-spacing:.2em;color:#f07a80;font-weight:800}h1{margin:4px 0;font-size:clamp(28px,5vw,42px);letter-spacing:-.04em}header p{margin:0;color:var(--muted)}
+main{max-width:1050px;margin:28px auto;padding:0 18px 60px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:18px;box-shadow:0 14px 40px #0003}
+h2{font-size:17px;margin:0 0 14px}.row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.field{display:grid;gap:6px;flex:1;min-width:170px}label{font-size:12px;color:var(--muted)}input{width:100%;background:#090e16;color:var(--text);border:1px solid #334155;border-radius:9px;padding:12px;font:inherit;min-width:0}input:focus{outline:2px solid #e34b5577;border-color:var(--accent)}
+button{border:1px solid #3a4659;background:#202a39;color:var(--text);padding:11px 15px;border-radius:9px;font-weight:700;cursor:pointer}button:hover{filter:brightness(1.2)}button.primary{background:var(--accent);border-color:var(--accent);color:white}button:disabled{opacity:.4;cursor:not-allowed}
+#items{display:grid;gap:9px;margin-top:15px}.item{display:grid;grid-template-columns:38px minmax(0,1fr) 100px auto;gap:10px;align-items:center;background:#0c121c;border:1px solid var(--line);padding:10px;border-radius:11px}.num{color:#f07a80;font-weight:800;text-align:center}.url{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.item input{padding:8px}.hint,.muted{color:var(--muted);font-size:12px}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.share{display:flex;gap:8px;margin-top:12px}.share input{flex:1}
+#viewer{position:fixed;inset:0;background:#000;z-index:10;display:none}#frame{width:100%;height:100%;border:0;background:#080808}#viewer.image-mode img{width:100%;height:100%;object-fit:contain}#bar{position:absolute;left:0;right:0;bottom:0;padding:14px 18px;display:flex;align-items:center;justify-content:center;gap:10px;background:linear-gradient(transparent,#000c);opacity:0;transition:opacity .2s}#viewer:hover #bar,#bar:focus-within{opacity:1}#counter{font-size:13px;color:#ddd;min-width:65px;text-align:center}#notice{position:absolute;top:16px;left:50%;transform:translateX(-50%);background:#161c28dd;padding:8px 13px;border-radius:8px;color:#dbe3ef;font-size:12px;max-width:90%;text-align:center}
+.empty{padding:20px;text-align:center;color:var(--muted);border:1px dashed #354155;border-radius:10px}
+@media(max-width:600px){.item{grid-template-columns:25px minmax(0,1fr) 75px}.item button{grid-column:2/4}.share{flex-direction:column}#bar{opacity:1}}
+</style>
+</head>
+<body>
+<header><div class="brand">PRESENTACIONES WEB</div><h1>SLIDES SIMPLE</h1><p>Une varias URL en una presentación y comparte un único enlace.</p></header>
+<main id="editor">
+<section class="panel"><h2>Configuración</h2><div class="row">
+<div class="field"><label for="name">Nombre de la presentación</label><input id="name" value="Mi presentación" maxlength="80"></div>
+<div class="field" style="max-width:190px"><label for="duration">Duración predeterminada (segundos)</label><input id="duration" type="number" min="2" max="3600" value="15"></div>
+</div><p class="hint">Puedes ajustar también el tiempo de cada URL individualmente.</p></section>
+<section class="panel"><h2>URLs de los slides</h2><div class="row"><div class="field"><label for="url">Dirección web o imagen</label><input id="url" type="url" placeholder="https://ejemplo.com/reporte" spellcheck="false"></div><button class="primary" id="add">＋ Agregar URL</button></div><div id="items"><div class="empty">Agrega tu primera URL para comenzar.</div></div>
+<div class="actions"><button id="preview">▶ Vista previa</button><button class="primary" id="generate">Crear enlace para compartir</button><button id="clear">Limpiar lista</button></div><div id="sharebox" hidden><div class="share"><input id="shareurl" readonly aria-label="Enlace de presentación"><button id="copy">Copiar enlace</button></div><p class="hint">El enlace contiene la configuración y las URL. No necesitas guardar nada en un servidor.</p></div>
+</section>
+</main>
+<div id="viewer"><iframe id="frame" allow="fullscreen; autoplay; clipboard-read; clipboard-write" referrerpolicy="no-referrer"></iframe><img id="photo" alt="Slide" hidden><div id="notice"></div><div id="bar"><button id="prev">⏮</button><button id="pause">Ⅱ Pausar</button><button id="next">⏭</button><span id="counter">1 / 1</span><button id="full">⛶</button><button id="close">✕ Salir</button></div></div>
+<script>
+(()=> {
+const $=id=>document.getElementById(id);let slides=[],index=0,timer=null,paused=false;
+const safeUrl=value=>{try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)?u.href:null}catch{return null}};
+function render(){const root=$('items');root.innerHTML='';if(!slides.length){root.innerHTML='<div class="empty">Agrega tu primera URL para comenzar.</div>';return}
+slides.forEach((s,i)=>{const row=document.createElement('div');row.className='item';const n=document.createElement('div');n.className='num';n.textContent=String(i+1).padStart(2,'0');const url=document.createElement('div');url.className='url';url.textContent=s.url;url.title=s.url;const time=document.createElement('input');time.type='number';time.min='2';time.max='3600';time.value=s.duration;time.title='Duración en segundos';time.setAttribute('aria-label','Duración del slide '+(i+1));time.addEventListener('change',()=>s.duration=Math.max(2,Math.min(3600,Number(time.value)||15)));const del=document.createElement('button');del.textContent='Eliminar';del.addEventListener('click',()=>{slides.splice(i,1);render()});row.append(n,url,time,del);root.append(row)})}
+function add(){const u=safeUrl($('url').value.trim());if(!u){alert('Ingresa una URL válida que comience con http:// o https://');return}slides.push({url:u,duration:Math.max(2,Math.min(3600,Number($('duration').value)||15))});$('url').value='';render()}
+function encode(){const data={v:1,name:$('name').value||'Mi presentación',slides};const bytes=new TextEncoder().encode(JSON.stringify(data));let binary='';bytes.forEach(b=>binary+=String.fromCharCode(b));return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function decode(){try{const token=location.hash.slice(1);if(!token)return false;const binary=atob(token.replace(/-/g,'+').replace(/_/g,'/'));const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));const data=JSON.parse(new TextDecoder().decode(bytes));if(data.v!==1||!Array.isArray(data.slides)||!data.slides.length)return false;slides=data.slides.map(s=>({url:safeUrl(s.url),duration:Math.max(2,Math.min(3600,Number(s.duration)||15))})).filter(s=>s.url);if(!slides.length)return false;$('name').value=data.name||'Presentación';return true}catch{return false}}
+function showLink(){if(!slides.length){alert('Agrega al menos una URL.');return}const link=location.href.split('#')[0]+'#'+encode();$('shareurl').value=link;$('sharebox').hidden=false}
+function play(){if(!slides.length)return;index=0;paused=false;$('viewer').style.display='block';$('editor').style.display='none';$('pause').textContent='Ⅱ Pausar';display()}
+function display(){clearTimeout(timer);const s=slides[index];const photo=/\.(png|jpe?g|gif|webp|avif|svg)(\?.*)?$/i.test(new URL(s.url).pathname);$('photo').hidden=!photo;$('frame').style.display=photo?'none':'block';if(photo){$('photo').src=s.url;$('viewer').classList.add('image-mode')}else{$('viewer').classList.remove('image-mode');$('frame').src=s.url;$('notice').textContent='Si el sitio bloquea la visualización en marcos, no podrá mostrarse aquí. Prueba con una URL de informe o una imagen.'} $('counter').textContent=(index+1)+' / '+slides.length;$('notice').style.display=photo?'none':'block';if(!paused)timer=setTimeout(()=>{index=(index+1)%slides.length;display()},s.duration*1000)}
+function stop(){clearTimeout(timer);$('viewer').style.display='none';$('editor').style.display='block';$('frame').src='about:blank';$('photo').src=''}
+$('add').onclick=add;$('url').addEventListener('keydown',e=>{if(e.key==='Enter')add()});$('generate').onclick=showLink;$('preview').onclick=()=>{if(!slides.length){alert('Agrega al menos una URL.');return}play()};$('clear').onclick=()=>{slides=[];render();$('sharebox').hidden=true};$('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('shareurl').value);$('copy').textContent='Copiado ✓'}catch{$('shareurl').select();document.execCommand('copy');$('copy').textContent='Copiado ✓'}};
+$('next').onclick=()=>{index=(index+1)%slides.length;display()};$('prev').onclick=()=>{index=(index-1+slides.length)%slides.length;display()};$('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'▶ Continuar':'Ⅱ Pausar';if(paused)clearTimeout(timer);else display()};$('close').onclick=stop;$('full').onclick=()=>{if(!document.fullscreenElement)$('viewer').requestFullscreen?.();else document.exitFullscreen?.()};
+document.addEventListener('keydown',e=>{if($('viewer').style.display!=='block')return;if(e.key==='Escape')stop();if(e.key==='ArrowRight')$('next').click();if(e.key==='ArrowLeft')$('prev').click();if(e.key===' '){e.preventDefault();$('pause').click()}});
+if(decode()){render();play()}else render();
+})();
+</script>
+</body></html>
