@@ -26,28 +26,58 @@ button{border:1px solid #3a4659;background:#202a39;color:var(--text);padding:11p
 <div class="field" style="max-width:190px"><label for="duration">Duración predeterminada (segundos)</label><input id="duration" type="number" min="2" max="3600" value="15"></div>
 </div><p class="hint">Puedes ajustar también el tiempo de cada URL individualmente.</p></section>
 <section class="panel"><h2>URLs de los slides</h2><div class="row"><div class="field"><label for="url">Dirección web o imagen</label><input id="url" type="url" placeholder="https://ejemplo.com/reporte" spellcheck="false"></div><button class="primary" id="add">＋ Agregar URL</button></div><div id="items"><div class="empty">Agrega tu primera URL para comenzar.</div></div>
-<div class="actions"><button id="preview">▶ Vista previa</button><button class="primary" id="generate">Crear enlace para compartir</button><button id="clear">Limpiar lista</button></div><div id="sharebox" hidden><div class="share"><input id="shareurl" readonly aria-label="Enlace de presentación"><button id="copy">Copiar enlace</button></div><p class="hint">El enlace contiene la configuración y las URL. No necesitas guardar nada en un servidor.</p></div>
+<div class="actions"><button id="preview">▶ Vista previa</button><button class="primary" id="generate">Crear enlace para compartir</button><button id="clear">Limpiar lista</button></div><div id="sharebox" hidden><div class="share"><input id="shareurl" readonly aria-label="Enlace de presentación"><button id="copy">Copiar enlace</button></div><p class="hint" id="sharehint">El enlace de respaldo comprimido puede guardarse sin servidor.</p></div>
 </section>
 </main>
 <div id="viewer"><iframe id="frame" allow="fullscreen; autoplay; clipboard-read; clipboard-write" referrerpolicy="no-referrer"></iframe><img id="photo" alt="Slide" hidden><div id="notice"></div><div id="bar"><button id="prev">⏮</button><button id="pause">Ⅱ Pausar</button><button id="next">⏭</button><span id="counter">1 / 1</span><button id="full">⛶</button><button id="close">✕ Salir</button></div></div>
 <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
 <script>
 (()=> {
-const $=id=>document.getElementById(id);let slides=[],index=0,timer=null,paused=false;
+const $=id=>document.getElementById(id);let slides=[],index=0,timer=null,paused=false;const API_BASE=''; // Se completa al desplegar el Worker de Cloudflare
 const safeUrl=value=>{try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)?u.href:null}catch{return null}};
 function render(){const root=$('items');root.innerHTML='';if(!slides.length){root.innerHTML='<div class="empty">Agrega tu primera URL para comenzar.</div>';return}
 slides.forEach((s,i)=>{const row=document.createElement('div');row.className='item';const n=document.createElement('div');n.className='num';n.textContent=String(i+1).padStart(2,'0');const url=document.createElement('div');url.className='url';url.textContent=s.url;url.title=s.url;const time=document.createElement('input');time.type='number';time.min='2';time.max='3600';time.value=s.duration;time.title='Duración en segundos';time.setAttribute('aria-label','Duración del slide '+(i+1));time.addEventListener('change',()=>s.duration=Math.max(2,Math.min(3600,Number(time.value)||15)));const del=document.createElement('button');del.textContent='Eliminar';del.addEventListener('click',()=>{slides.splice(i,1);render()});row.append(n,url,time,del);root.append(row)})}
 function add(){const u=safeUrl($('url').value.trim());if(!u){alert('Ingresa una URL válida que comience con http:// o https://');return}slides.push({url:u,duration:Math.max(2,Math.min(3600,Number($('duration').value)||15))});$('url').value='';render()}
 function encode(){const data={v:1,n:$('name').value||'Mi presentación',s:slides.map(x=>[x.url,x.duration])};return 'z'+LZString.compressToEncodedURIComponent(JSON.stringify(data))}
-function decode(){try{const token=location.hash.slice(1);if(!token)return false;let data;if(token.startsWith('z')){data=JSON.parse(LZString.decompressFromEncodedURIComponent(token.slice(1)));if(data&&data.v===1){data={v:1,name:data.n,slides:(data.s||[]).map(x=>({url:x[0],duration:x[1]}))}}}else{const binary=atob(token.replace(/-/g,'+').replace(/_/g,'/'));const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));data=JSON.parse(new TextDecoder().decode(bytes))}if(data.v!==1||!Array.isArray(data.slides)||!data.slides.length)return false;slides=data.slides.map(s=>({url:safeUrl(s.url),duration:Math.max(2,Math.min(3600,Number(s.duration)||15))})).filter(s=>s.url);if(!slides.length)return false;$('name').value=data.name||'Presentación';return true}catch{return false}}
-function showLink(){if(!slides.length){alert('Agrega al menos una URL.');return}const link=location.href.split('#')[0]+'#'+encode();$('shareurl').value=link;$('sharebox').hidden=false}
+async function decode(){try{
+const token=location.hash.slice(1);if(!token)return false;let data;
+if(token.startsWith('i=')){
+ const id=token.slice(2);if(!/^[A-Za-z0-9_-]{10,12}$/.test(id))return false;
+ if(!API_BASE)throw new Error('El almacenamiento corto aún no está conectado.');
+ const response=await fetch(API_BASE+'/api/slides/'+id);
+ if(!response.ok){let message='No se encontró la presentación.';try{message=(await response.json()).error||message}catch{}throw new Error(message)}
+ const remote=await response.json();data={v:1,name:remote.n,slides:(remote.s||[]).map(x=>({url:x[0],duration:x[1]}))};
+}else if(token.startsWith('z')){data=JSON.parse(LZString.decompressFromEncodedURIComponent(token.slice(1)));if(data&&data.v===1){data={v:1,name:data.n,slides:(data.s||[]).map(x=>({url:x[0],duration:x[1]}))}}}
+else{const binary=atob(token.replace(/-/g,'+').replace(/_/g,'/'));const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));data=JSON.parse(new TextDecoder().decode(bytes))}
+if(data.v!==1||!Array.isArray(data.slides)||!data.slides.length)return false;
+slides=data.slides.map(s=>({url:safeUrl(s.url),duration:Math.max(2,Math.min(3600,Number(s.duration)||15))})).filter(s=>s.url);
+if(!slides.length)return false;$('name').value=data.name||'Presentación';return true;
+}catch(error){if(location.hash.startsWith('#i='))alert('No se pudo abrir el enlace: '+(error?.message||'error de conexión'));return false}}
+async function showLink(){
+if(!slides.length){alert('Agrega al menos una URL.');return}
+const base=location.href.split('#')[0];const fallback=base+'#'+encode();let link=fallback;
+const button=$('generate');button.disabled=true;button.textContent='Guardando…';
+try{
+ if(API_BASE){
+  const response=await fetch(API_BASE+'/api/slides',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n:$('name').value||'Mi presentación',s:slides.map(x=>[x.url,x.duration])})});
+  const result=await response.json();if(!response.ok)throw new Error(result.error||'Error de almacenamiento');
+  link=base+'#i='+result.id;
+  $('sharehint').textContent='Enlace corto guardado en Cloudflare KV. El enlace contiene solo un identificador.';
+ }else{
+  $('sharehint').textContent='Cloudflare aún no está conectado. Se generó un enlace comprimido local; su longitud depende de la cantidad de URL.';
+ }
+}catch(error){
+ $('sharehint').textContent='No se pudo guardar en Cloudflare ('+(error?.message||'error')+'). Se generó un enlace comprimido como respaldo.';
+}
+$('shareurl').value=link;$('sharebox').hidden=false;button.disabled=false;button.textContent='Crear enlace para compartir';
+}
 function play(){if(!slides.length)return;index=0;paused=false;$('viewer').style.display='block';$('editor').style.display='none';$('pause').textContent='Ⅱ Pausar';display()}
 function display(){clearTimeout(timer);const s=slides[index];const photo=/\.(png|jpe?g|gif|webp|avif|svg)(\?.*)?$/i.test(new URL(s.url).pathname);$('photo').hidden=!photo;$('frame').style.display=photo?'none':'block';if(photo){$('photo').src=s.url;$('viewer').classList.add('image-mode')}else{$('viewer').classList.remove('image-mode');$('frame').src=s.url;$('notice').textContent='Si el sitio bloquea la visualización en marcos, no podrá mostrarse aquí. Prueba con una URL de informe o una imagen.'} $('counter').textContent=(index+1)+' / '+slides.length;$('notice').style.display=photo?'none':'block';if(!paused)timer=setTimeout(()=>{index=(index+1)%slides.length;display()},s.duration*1000)}
 function stop(){clearTimeout(timer);$('viewer').style.display='none';$('editor').style.display='block';$('frame').src='about:blank';$('photo').src=''}
 $('add').onclick=add;$('url').addEventListener('keydown',e=>{if(e.key==='Enter')add()});$('generate').onclick=showLink;$('preview').onclick=()=>{if(!slides.length){alert('Agrega al menos una URL.');return}play()};$('clear').onclick=()=>{slides=[];render();$('sharebox').hidden=true};$('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('shareurl').value);$('copy').textContent='Copiado ✓'}catch{$('shareurl').select();document.execCommand('copy');$('copy').textContent='Copiado ✓'}};
 $('next').onclick=()=>{index=(index+1)%slides.length;display()};$('prev').onclick=()=>{index=(index-1+slides.length)%slides.length;display()};$('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'▶ Continuar':'Ⅱ Pausar';if(paused)clearTimeout(timer);else display()};$('close').onclick=stop;$('full').onclick=()=>{if(!document.fullscreenElement)$('viewer').requestFullscreen?.();else document.exitFullscreen?.()};
 document.addEventListener('keydown',e=>{if($('viewer').style.display!=='block')return;if(e.key==='Escape')stop();if(e.key==='ArrowRight')$('next').click();if(e.key==='ArrowLeft')$('prev').click();if(e.key===' '){e.preventDefault();$('pause').click()}});
-if(decode()){render();play()}else render();
+(async()=>{if(await decode()){render();play()}else render()})();
 })();
 </script>
 </body></html>
